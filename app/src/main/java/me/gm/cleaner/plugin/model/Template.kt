@@ -29,6 +29,7 @@ data class Template(
     @field:SerializedName("apply_to_app") val applyToApp: List<String>?,
     @field:SerializedName("permitted_media_types") val permittedMediaTypes: List<Int>?,
     @field:SerializedName("filter_path") val filterPath: List<String>?,
+    @field:SerializedName("redirect_path") val redirectPath: String? = null,
 )
 
 class Templates(json: String?) {

@@ -18,11 +18,20 @@
 
 <PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <EditTextPreference
-        app:iconSpaceReserved="false"
-        app:key="@string/template_name_key"
-        app:title="@string/template_name_title"
-        app:useSimpleSummaryProvider="true" />
+
+<EditTextPreference
+    app:iconSpaceReserved="false"
+    app:key="@string/template_name_key"
+    app:title="@string/template_name_title"
+    app:useSimpleSummaryProvider="true" />
+
+<!-- 2. 重定向路径 (新增的) -->
+<EditTextPreference
+    app:iconSpaceReserved="false"
+    app:key="@string/redirect_path_key"
+    app:title="@string/redirect_path_title"
+    app:summary="@string/redirect_path_summary"
+    app:useSimpleSummaryProvider="true" />
 
     <me.gm.cleaner.plugin.ui.module.settings.preference.RefinedMultiSelectListPreference
         app:defaultValue="@array/hook_operation_entryValues"

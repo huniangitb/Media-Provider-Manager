@@ -18,6 +18,7 @@ package me.gm.cleaner.plugin.xposed.hooker
 
 import android.content.ContentResolver
 import android.database.Cursor
+import android.database.CursorWrapper
 import android.database.MatrixCursor
 import android.net.Uri
 import android.os.Build
@@ -115,19 +116,12 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
                 "com.android.providers.media.util.DatabaseUtils", service.classLoader
             )
             if (targetSdkVersion < Build.VERSION_CODES.R) {
-                // Some apps are abusing "ORDER BY" clauses to inject "LIMIT"
-                // clauses; gracefully lift them out.
                 XposedHelpers.callStaticMethod(databaseUtilsClass, "recoverAbusiveSortOrder", query)
-
-                // Some apps are abusing the Uri query parameters to inject LIMIT
-                // clauses; gracefully lift them out.
                 XposedHelpers.callStaticMethod(
                     databaseUtilsClass, "recoverAbusiveLimit", uri, query
                 )
             }
             if (targetSdkVersion < Build.VERSION_CODES.Q) {
-                // Some apps are abusing the "WHERE" clause by injecting "GROUP BY"
-                // clauses; gracefully lift them out.
                 XposedHelpers.callStaticMethod(databaseUtilsClass, "recoverAbusiveSelection", query)
             }
         }
@@ -167,38 +161,53 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
                 else -> throw UnsupportedOperationException()
             } as Cursor
         } catch (e: XposedHelpers.InvocationTargetError) {
-            // IllegalArgumentException that thrown from the media provider. Nothing I can do.
             return
         }
         if (c.count == 0) {
-            // querying nothing.
             c.close()
             return
         }
+
+        /** 获取重定向和拦截规则 */
+        val templates = service.ruleSp.templates.filterTemplate(javaClass, param.callingPackage)
+        
+        // 1. 提取数据用于过滤和日志记录
         val dataColumn = c.getColumnIndexOrThrow(FileColumns.DATA)
         val mimeTypeColumn = c.getColumnIndex(FileColumns.MIME_TYPE)
-
-        val data = mutableListOf<String>()
-        val mimeType = mutableListOf<String>()
+        val dataList = mutableListOf<String>()
+        val mimeTypeList = mutableListOf<String>()
         while (c.moveToNext()) {
-            data += c.getString(dataColumn)
-            mimeType += c.getString(mimeTypeColumn)
+            dataList += c.getString(dataColumn)
+            mimeTypeList += c.getString(mimeTypeColumn)
         }
 
-        /** INTERCEPT */
-        val shouldIntercept = service.ruleSp.templates
-            .filterTemplate(javaClass, param.callingPackage)
-            .applyTemplates(data, mimeType)
-        if (shouldIntercept.isEmpty()) {
-            c.close()
-        } else {
-            c.moveToFirst()
-            val filter = shouldIntercept
-                .mapIndexedNotNull { index, b ->
-                    if (!b) index else null
+        // 2. 处理重定向 (路径还原)
+        val redirectionMap = mutableMapOf<String, String>()
+        templates.values.forEach { template ->
+            val redirectPath = template.redirectPath
+            if (!redirectPath.isNullOrEmpty()) {
+                template.filterPath?.forEach { originalPath ->
+                    // 建立 真实路径 -> 原始路径 的映射
+                    redirectionMap[redirectPath] = originalPath
                 }
+            }
+        }
+
+        var wrappedCursor: Cursor = c
+        if (redirectionMap.isNotEmpty()) {
+            wrappedCursor = RedirectedCursor(c, redirectionMap)
+        }
+
+        // 3. 处理拦截 (过滤)
+        val shouldIntercept = templates.applyTemplates(dataList, mimeTypeList)
+        if (shouldIntercept.any { it }) {
+            wrappedCursor.moveToFirst()
+            val filter = shouldIntercept
+                .mapIndexedNotNull { index, b -> if (!b) index else null }
                 .toIntArray()
-            param.result = FilteredCursor.createUsingFilter(c, filter)
+            param.result = FilteredCursor.createUsingFilter(wrappedCursor, filter)
+        } else {
+            param.result = wrappedCursor
         }
 
         /** RECORD */
@@ -213,8 +222,8 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
                     param.callingPackage,
                     table,
                     OP_QUERY,
-                    if (data.size < MAX_SIZE) data else data.subList(0, MAX_SIZE),
-                    mimeType,
+                    if (dataList.size < MAX_SIZE) dataList else dataList.subList(0, MAX_SIZE),
+                    mimeTypeList,
                     shouldIntercept
                 )
             )
@@ -222,21 +231,28 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
         }
     }
 
+    /**
+     * 自定义 CursorWrapper，用于在应用读取时将重定向后的真实路径还原为原始路径。
+     */
+    private class RedirectedCursor(cursor: Cursor, private val redirectMap: Map<String, String>) : CursorWrapper(cursor) {
+        private val dataColumnIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+
+        override fun getString(columnIndex: Int): String? {
+            val value = super.getString(columnIndex)
+            if (columnIndex == dataColumnIndex && value != null) {
+                for ((realPath, originalPath) in redirectMap) {
+                    if (value.startsWith(realPath)) {
+                        return value.replaceFirst(realPath, originalPath)
+                    }
+                }
+            }
+            return value
+        }
+    }
+
     private fun isClientQuery(callingPackage: String, uri: Uri) =
         callingPackage == BuildConfig.APPLICATION_ID && uri == MediaStore.Images.Media.INTERNAL_CONTENT_URI
 
-    /**
-     * This function handles queries from the client. It takes effect when calling package is
-     * [BuildConfig.APPLICATION_ID] and query Uri is [MediaStore.Images.Media.INTERNAL_CONTENT_URI].
-     * @param table We regard projection as table name.
-     * @param queryArgs We regard selection as start time millis, sort order as end time millis,
-     * selection args as package names.
-     * @return Returns an empty [Cursor] with [ManagerService]'s [android.os.IBinder] in its extras
-     * when queryArgs is empty. Returns a [Cursor] queried from the [MediaProviderRecordDatabase]
-     * when at least table name, start time millis and end time millis are declared.
-     * @throws [NullPointerException] or [IllegalArgumentException] when we don't know how to
-     * handle the query.
-     */
     private fun handleClientQuery(table: Array<String>?, queryArgs: Bundle): Cursor {
         if (table == null || queryArgs.isEmpty) {
             return MatrixCursor(arrayOf("binder")).apply {
@@ -252,7 +268,6 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
     companion object {
         private const val INCLUDED_DEFAULT_DIRECTORIES = "android:included-default-directories"
         private const val TYPE_QUERY = 0
-
         private const val MAX_SIZE = 1000
     }
 }

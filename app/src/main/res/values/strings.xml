@@ -87,6 +87,10 @@
     <string name="create_template_title">Create template</string>
     <string name="edit_template_title">Edit template</string>
     <string name="template_name_key" translatable="false">template_name</string>
+    <string name="redirect_path_key">redirect_path</string>
+
+<string name="redirect_path_title">重定向路径</string>
+<string name="redirect_path_summary">匹配的文件将被实际存储到此路径 (例如: /storage/emulated/0/Redirected/)</string>
     <string name="template_name_title">Template name</string>
     <string name="template_name_not_unique">The template name is not unique.</string>
     <string name="hook_operation_key" translatable="false">hook_operation</string>

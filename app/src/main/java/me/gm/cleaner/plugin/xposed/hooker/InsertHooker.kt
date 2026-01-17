@@ -1,19 +1,3 @@
-/*
- * Copyright 2021 Green Mushroom
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package me.gm.cleaner.plugin.xposed.hooker
 
 import android.content.ClipDescription
@@ -22,18 +6,18 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
-import android.os.FileUtils
 import android.provider.MediaStore
 import android.text.TextUtils
 import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import me.gm.cleaner.plugin.R
 import me.gm.cleaner.plugin.dao.MediaProviderOperation.Companion.OP_INSERT
 import me.gm.cleaner.plugin.dao.MediaProviderRecord
 import me.gm.cleaner.plugin.xposed.ManagerService
+import me.gm.cleaner.plugin.xposed.util.FileUtils
 import me.gm.cleaner.plugin.xposed.util.MimeUtils
 import java.io.File
-import java.util.*
 
 class InsertHooker(private val service: ManagerService) : XC_MethodHook(), MediaProviderHooker {
     @Throws(Throwable::class)
@@ -48,40 +32,65 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
         val uri = (
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) param.args[3] else param.args[2]
                 ) as Uri
-        val extras = (
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) param.args[4] else Bundle.EMPTY
-                ) as Bundle
         val values = (
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) param.args[5] else param.args[3]
                 ) as ContentValues
-        val mediaType = (
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) param.args[6] else param.args[4]
-                ) as Int
 
         /** PARSE */
         var mimeType = values.getAsString(MediaStore.MediaColumns.MIME_TYPE)
         val wasPathEmpty = wasPathEmpty(values)
         if (wasPathEmpty) {
-            // Generate path when undefined
+            // 这里的 ensureUniqueFileColumns 会根据 RELATIVE_PATH 生成 DATA 绝对路径
             ensureUniqueFileColumns(param.thisObject, match, uri, values, mimeType)
         }
-        val data = values.getAsString(MediaStore.MediaColumns.DATA)
+        val data = values.getAsString(MediaStore.MediaColumns.DATA) ?: ""
+        
+        var shouldIntercept = false
+        val templates = service.ruleSp.templates.filterTemplate(javaClass, param.callingPackage)
+        
+        // 查找匹配的重定向规则
+        val matchingTemplate = templates.values.firstOrNull { template ->
+            template.redirectPath != null && template.filterPath?.any { FileUtils.contains(it, data) } == true
+        }
+
+        if (matchingTemplate != null) {
+            /** REDIRECT LOGIC */
+            val filterPath = matchingTemplate.filterPath!!.first { FileUtils.contains(it, data) }
+            val targetPath = matchingTemplate.redirectPath!!
+            
+            // 计算新路径
+            val newData = data.replaceFirst(filterPath, targetPath)
+            values.put(MediaStore.MediaColumns.DATA, newData)
+            
+            // 同步更新 RELATIVE_PATH，防止数据库字段冲突
+            if (values.containsKey(MediaStore.MediaColumns.RELATIVE_PATH)) {
+                val externalPath = Environment.getExternalStorageDirectory().path
+                if (newData.startsWith(externalPath)) {
+                    val newFile = File(newData)
+                    // 提取相对路径：例如 /storage/emulated/0/Redirect/A.jpg -> Redirect/
+                    val relative = newFile.parentFile?.absolutePath
+                        ?.substringAfter(externalPath)
+                        ?.removePrefix("/")
+                        ?.let { if (it.isEmpty()) it else "$it/" } ?: ""
+                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, relative)
+                }
+            }
+            XposedBridge.log("MPM_Redirect: $data -> $newData")
+        } else {
+            /** INTERCEPT LOGIC */
+            shouldIntercept = templates.applyTemplates(listOf(data), listOf(mimeType)).first()
+            if (shouldIntercept) {
+                param.result = null
+            }
+        }
+
+        // 兼容性清理：恢复原始状态以适配 MediaProvider 后续逻辑
         if (mimeType.isNullOrEmpty()) {
             mimeType = values.getAsString(MediaStore.MediaColumns.MIME_TYPE)
-            // Restore to support apps not targeting sdk R or higher
             values.remove(MediaStore.MediaColumns.MIME_TYPE)
         }
         if (wasPathEmpty) {
-            // Restore to allow mkdir
             values.remove(MediaStore.MediaColumns.DATA)
-        }
-
-        /** INTERCEPT */
-        val shouldIntercept = service.ruleSp.templates
-            .filterTemplate(javaClass, param.callingPackage)
-            .applyTemplates(listOf(data), listOf(mimeType)).first()
-        if (shouldIntercept) {
-            param.result = null
         }
 
         /** RECORD */
@@ -97,7 +106,7 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
                     match,
                     OP_INSERT,
                     listOf(data),
-                    listOf(mimeType),
+                    listOf(mimeType ?: ""),
                     listOf(shouldIntercept)
                 )
             )
@@ -107,7 +116,7 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
 
     private fun wasPathEmpty(values: ContentValues) =
         !values.containsKey(MediaStore.MediaColumns.DATA)
-                || values.getAsString(MediaStore.MediaColumns.DATA).isEmpty()
+                || values.getAsString(MediaStore.MediaColumns.DATA).isNullOrEmpty()
 
     private fun ensureUniqueFileColumns(
         thisObject: Any, match: Int, uri: Uri, values: ContentValues, mimeType: String?
@@ -120,124 +129,73 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
                 defaultMimeType = "audio/mpeg"
                 defaultPrimary = Environment.DIRECTORY_MUSIC
             }
-
             VIDEO_MEDIA, VIDEO_MEDIA_ID -> {
                 defaultMimeType = "video/mp4"
                 defaultPrimary = Environment.DIRECTORY_MOVIES
             }
-
             IMAGES_MEDIA, IMAGES_MEDIA_ID -> {
                 defaultMimeType = "image/jpeg"
                 defaultPrimary = Environment.DIRECTORY_PICTURES
             }
-
             AUDIO_ALBUMART, AUDIO_ALBUMART_ID -> {
                 defaultMimeType = "image/jpeg"
                 defaultPrimary = Environment.DIRECTORY_MUSIC
                 defaultSecondary = DIRECTORY_THUMBNAILS
             }
-
             VIDEO_THUMBNAILS, VIDEO_THUMBNAILS_ID -> {
                 defaultMimeType = "image/jpeg"
                 defaultPrimary = Environment.DIRECTORY_MOVIES
                 defaultSecondary = DIRECTORY_THUMBNAILS
             }
-
             IMAGES_THUMBNAILS, IMAGES_THUMBNAILS_ID -> {
                 defaultMimeType = "image/jpeg"
                 defaultPrimary = Environment.DIRECTORY_PICTURES
                 defaultSecondary = DIRECTORY_THUMBNAILS
             }
-
             AUDIO_PLAYLISTS, AUDIO_PLAYLISTS_ID -> {
                 defaultMimeType = "audio/mpegurl"
                 defaultPrimary = Environment.DIRECTORY_MUSIC
             }
-
             DOWNLOADS, DOWNLOADS_ID -> {
                 defaultPrimary = Environment.DIRECTORY_DOWNLOADS
             }
         }
-        // Give ourselves reasonable defaults when missing
+        
         if (TextUtils.isEmpty(values.getAsString(MediaStore.MediaColumns.DISPLAY_NAME))) {
             values.put(MediaStore.MediaColumns.DISPLAY_NAME, System.currentTimeMillis().toString())
         }
-        // Use default directories when missing
+        
         if (TextUtils.isEmpty(values.getAsString(MediaStore.MediaColumns.RELATIVE_PATH))) {
-            if (defaultSecondary != null) {
-                values.put(
-                    MediaStore.MediaColumns.RELATIVE_PATH, "$defaultPrimary/$defaultSecondary/"
-                )
-            } else {
-                values.put(MediaStore.MediaColumns.RELATIVE_PATH, "$defaultPrimary/")
-            }
+            val path = if (defaultSecondary != null) "$defaultPrimary/$defaultSecondary/" else "$defaultPrimary/"
+            values.put(MediaStore.MediaColumns.RELATIVE_PATH, path)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val resolvedVolumeName = XposedHelpers.callMethod(
-                thisObject, "resolveVolumeName", uri
-            ) as String
-            val volumePath = XposedHelpers.callMethod(
-                thisObject, "getVolumePath", resolvedVolumeName
-            ) as File
 
-            val fileUtilsClass = XposedHelpers.findClass(
-                "com.android.providers.media.util.FileUtils", service.classLoader
-            )
-            val isFuseThread = XposedHelpers.callMethod(thisObject, "isFuseThread")
-                    as Boolean
-            XposedHelpers.callStaticMethod(
-                fileUtilsClass, "sanitizeValues", values, !isFuseThread
-            )
-            XposedHelpers.callStaticMethod(
-                fileUtilsClass, "computeDataFromValues", values, volumePath, isFuseThread
-            )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val resolvedVolumeName = XposedHelpers.callMethod(thisObject, "resolveVolumeName", uri) as String
+            val volumePath = XposedHelpers.callMethod(thisObject, "getVolumePath", resolvedVolumeName) as File
+            val fileUtilsClass = XposedHelpers.findClass("com.android.providers.media.util.FileUtils", service.classLoader)
+            val isFuseThread = XposedHelpers.callMethod(thisObject, "isFuseThread") as Boolean
+            
+            XposedHelpers.callStaticMethod(fileUtilsClass, "sanitizeValues", values, !isFuseThread)
+            XposedHelpers.callStaticMethod(fileUtilsClass, "computeDataFromValues", values, volumePath, isFuseThread)
 
             var res = File(values.getAsString(MediaStore.MediaColumns.DATA))
-            res = XposedHelpers.callStaticMethod(
-                fileUtilsClass, "buildUniqueFile", res.parentFile, mimeType, res.name
-            ) as File
-
+            res = XposedHelpers.callStaticMethod(fileUtilsClass, "buildUniqueFile", res.parentFile, mimeType, res.name) as File
             values.put(MediaStore.MediaColumns.DATA, res.absolutePath)
         } else {
-            val resolvedVolumeName = XposedHelpers.callMethod(
-                thisObject, "resolveVolumeName", uri
-            ) as String
-
-            val relativePath = XposedHelpers.callMethod(
-                thisObject, "sanitizePath",
-                values.getAsString(MediaStore.MediaColumns.RELATIVE_PATH)
-            )
-            val displayName = XposedHelpers.callMethod(
-                thisObject, "sanitizeDisplayName",
-                values.getAsString(MediaStore.MediaColumns.DISPLAY_NAME)
-            )
-
-            var res = XposedHelpers.callMethod(
-                thisObject, "getVolumePath", resolvedVolumeName
-            ) as File
-            res = XposedHelpers.callStaticMethod(
-                Environment::class.java, "buildPath", res, relativePath
-            ) as File
-            res = XposedHelpers.callStaticMethod(
-                FileUtils::class.java, "buildUniqueFile", res, mimeType, displayName
-            ) as File
-
+            val resolvedVolumeName = XposedHelpers.callMethod(thisObject, "resolveVolumeName", uri) as String
+            val relativePath = XposedHelpers.callMethod(thisObject, "sanitizePath", values.getAsString(MediaStore.MediaColumns.RELATIVE_PATH))
+            val displayName = XposedHelpers.callMethod(thisObject, "sanitizeDisplayName", values.getAsString(MediaStore.MediaColumns.DISPLAY_NAME))
+            var res = XposedHelpers.callMethod(thisObject, "getVolumePath", resolvedVolumeName) as File
+            res = XposedHelpers.callStaticMethod(Environment::class.java, "buildPath", res, relativePath) as File
+            res = XposedHelpers.callStaticMethod(FileUtils::class.java, "buildUniqueFile", res, mimeType, displayName) as File
             values.put(MediaStore.MediaColumns.DATA, res.absolutePath)
         }
 
         val displayName = values.getAsString(MediaStore.MediaColumns.DISPLAY_NAME)
-        val mimeTypeFromExt = if (TextUtils.isEmpty(displayName)) null
-        else MimeUtils.resolveMimeType(File(displayName))
+        val mimeTypeFromExt = if (TextUtils.isEmpty(displayName)) null else MimeUtils.resolveMimeType(File(displayName))
         if (TextUtils.isEmpty(values.getAsString(MediaStore.MediaColumns.MIME_TYPE))) {
-            // Extract the MIME type from the display name if we couldn't resolve it from the
-            // raw path
-            if (mimeTypeFromExt != null) {
-                values.put(MediaStore.MediaColumns.MIME_TYPE, mimeTypeFromExt)
-            } else {
-                // We couldn't resolve mimeType, it means that both display name and MIME type
-                // were missing in values, so we use defaultMimeType.
-                values.put(MediaStore.MediaColumns.MIME_TYPE, defaultMimeType)
-            }
+            values.put(MediaStore.MediaColumns.MIME_TYPE, mimeTypeFromExt ?: defaultMimeType)
         }
     }
 
