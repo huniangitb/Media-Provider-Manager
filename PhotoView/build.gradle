@@ -4,7 +4,7 @@
 ext {
     // 这里统一定义版本，防止 photoview 找不到变量
     sdkVersion = 34
-    minSdkVersion = 21
+    minSdkVersion = 29
 }
 
 // 注意：删除原有的 buildscript 块，因为插件版本由根目录统一管理
