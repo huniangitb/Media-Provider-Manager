@@ -1,41 +1,16 @@
-plugins {
-    id 'com.android.library'
-    // 如果源码包含 Kotlin，请保留下一行，否则可删除
-    id 'org.jetbrains.kotlin.android' 
-}
+apply plugin: 'com.android.library'
 
 android {
-    // 必须指定 namespace，否则 AGP 8.4 会报错
-    namespace "com.github.chrisbanes.photoview"
-    
-    // 直接写数字，不再引用 rootProject 变量
     compileSdk 34
 
     defaultConfig {
-        minSdk 29
-        // targetSdk 在库项目中通常不需要单独指定
+        minSdkVersion 29
+        targetSdk 34
     }
-
-    buildTypes {
-        release {
-            minifyEnabled false
-        }
-    }
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
-
-    // 解决你之前遇到的警告
-    buildFeatures {
-        buildConfig = true
-    }
+    namespace 'com.github.chrisbanes.photoview'
 }
 
 dependencies {
     implementation "androidx.appcompat:appcompat:1.6.1"
-    implementation 'androidx.exifinterface:exifinterface:1.3.6'
-    // 如果用了 Kotlin，添加下面这行
-    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
+    implementation 'androidx.exifinterface:exifinterface:1.3.7'
 }
