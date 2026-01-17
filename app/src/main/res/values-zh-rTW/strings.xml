@@ -55,7 +55,7 @@
     <string name="share">分享</string>
     <string name="screen_rotation">旋轉螢幕</string>
     <string name="info">訊息</string>
-    <string name="info_item">%s：%s</string>
+    <string name="info_item">%1$s：%2$s</string>
     <string name="resolution">解析度</string>
     <string name="menu_sort_by_path_title">路徑</string>
     <string name="menu_sort_by_date_taken_title">建立日期</string>
@@ -79,6 +79,9 @@
     <string name="permitted_media_types_title">允許的媒體型別</string>
     <string name="filter_path_title">過濾路徑</string>
     <string name="add_path">新增路徑</string>
+<string name="redirect_path_key">redirect_path</string>
+<string name="redirect_path_title">重定向至</string>
+<string name="redirect_path_summary">匹配的文件將被實際存儲到此目錄</string>
     <string name="save">儲存</string>
     <string name="quit_without_save">更改未儲存，您確定要退出嗎？</string>
 

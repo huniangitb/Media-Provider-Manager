@@ -55,7 +55,7 @@
     <string name="share">分享</string>
     <string name="screen_rotation">旋转屏幕</string>
     <string name="info">信息</string>
-    <string name="info_item">%s：%s</string>
+    <string name="info_item">%1$s：%2$s</string>
     <string name="resolution">分辨率</string>
     <string name="menu_sort_by_path_title">路径</string>
     <string name="menu_sort_by_date_taken_title">创建日期</string>
@@ -78,6 +78,9 @@
     <string name="apply_to_app_title">应用到应用</string>
     <string name="permitted_media_types_title">允许的媒体类型</string>
     <string name="filter_path_title">过滤路径</string>
+<string name="redirect_path_key">redirect_path</string>
+<string name="redirect_path_title">重定向至</string>
+<string name="redirect_path_summary">匹配的文件将被实际存储到此目录</string>
     <string name="add_path">添加路径</string>
     <string name="save">保存</string>
     <string name="quit_without_save">更改未保存，您确定要退出吗？</string>
