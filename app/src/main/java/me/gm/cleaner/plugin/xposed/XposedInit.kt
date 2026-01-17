@@ -42,9 +42,11 @@ class XposedInit : ManagerService(), IXposedHookLoadPackage, IXposedHookZygoteIn
         } catch (e: XposedHelpers.ClassNotFoundError) {
             return
         }
-        // only save MediaProvider's classLoader
+        // 保存 MediaProvider 的 classLoader
         classLoader = lpparam.classLoader
         onCreate(context)
+        
+        // 修复点：传入 this@XposedInit 作为 service 参数
         XposedBridge.hookAllMethods(
             mediaProvider, "queryInternal", QueryHooker(this@XposedInit)
         )
@@ -58,8 +60,9 @@ class XposedInit : ManagerService(), IXposedHookLoadPackage, IXposedHookZygoteIn
 
     @Throws(Throwable::class)
     private fun onDownloadManagerLoaded(lpparam: LoadPackageParam, context: Context) {
-        XposedHelpers.findAndHookMethod(File::class.java, "mkdir", FileHooker())
-        XposedHelpers.findAndHookMethod(File::class.java, "mkdirs", FileHooker())
+        // 修复点：FileHooker 现在也需要 service 参数来读取重定向规则
+        XposedHelpers.findAndHookMethod(File::class.java, "mkdir", FileHooker(this@XposedInit))
+        XposedHelpers.findAndHookMethod(File::class.java, "mkdirs", FileHooker(this@XposedInit))
     }
 
     @Throws(Throwable::class)
