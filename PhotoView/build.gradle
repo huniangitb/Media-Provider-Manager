@@ -1,42 +1,11 @@
-plugins {
-    id 'com.android.library'
-    id 'org.jetbrains.kotlin.android'
+// PhotoView/build.gradle
+
+// 定义扩展属性，供下级子模块 photoview 使用
+ext {
+    // 这里统一定义版本，防止 photoview 找不到变量
+    sdkVersion = 34
+    minSdkVersion = 21
 }
 
-android {
-    // 这里的 namespace 必须与源码包名一致
-    namespace "com.github.chrisbanes.photoview" 
-    
-    // 直接写数字，不要引用 ext 变量，避免报错
-    compileSdk 34
-
-    defaultConfig {
-        minSdk 21
-        // targetSdk 在 library 中可选，通常与 compileSdk 一致
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled false
-        }
-    }
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
-
-    kotlinOptions {
-        jvmTarget = '1.8'
-    }
-
-    // 解决 BuildConfig 警告
-    buildFeatures {
-        buildConfig = true
-    }
-}
-
-dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
-    implementation 'androidx.core:core-ktx:1.13.1'
-}
+// 注意：删除原有的 buildscript 块，因为插件版本由根目录统一管理
+// 注意：删除原有的 allprojects 块，因为仓库地址已在根目录配置
