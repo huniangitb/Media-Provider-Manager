@@ -4,20 +4,20 @@ plugins {
 }
 
 android {
-
+    // 这里的 namespace 必须与源码包名一致
     namespace "com.github.chrisbanes.photoview" 
     
+    // 直接写数字，不要引用 ext 变量，避免报错
     compileSdk 34
 
     defaultConfig {
         minSdk 21
-
+        // targetSdk 在 library 中可选，通常与 compileSdk 一致
     }
 
     buildTypes {
         release {
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 
@@ -30,15 +30,13 @@ android {
         jvmTarget = '1.8'
     }
 
-
+    // 解决 BuildConfig 警告
     buildFeatures {
         buildConfig = true
     }
 }
 
 dependencies {
-
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
     implementation 'androidx.core:core-ktx:1.13.1'
-    implementation 'androidx.appcompat:appcompat:1.7.0'
 }
