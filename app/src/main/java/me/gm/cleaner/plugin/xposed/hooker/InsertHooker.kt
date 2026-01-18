@@ -40,42 +40,41 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
         var mimeType = values.getAsString(MediaStore.MediaColumns.MIME_TYPE)
         val wasPathEmpty = wasPathEmpty(values)
         if (wasPathEmpty) {
-            // 这里的 ensureUniqueFileColumns 会根据 RELATIVE_PATH 生成 DATA 绝对路径
+            // ensureUniqueFileColumns 会根据 RELATIVE_PATH 生成 DATA 绝对路径
             ensureUniqueFileColumns(param.thisObject, match, uri, values, mimeType)
         }
         val data = values.getAsString(MediaStore.MediaColumns.DATA) ?: ""
         
         var shouldIntercept = false
-        val templates = service.ruleSp.templates.filterTemplate(javaClass, param.callingPackage)
+        val callingPackage = param.callingPackage
+        val templates = service.ruleSp.templates.filterTemplate(javaClass, callingPackage)
         
         // 查找匹配的重定向规则
         val matchingTemplate = templates.values.firstOrNull { template ->
             template.redirectPath != null && template.filterPath?.any { FileUtils.contains(it, data) } == true
         }
 
+        var finalData = data
         if (matchingTemplate != null) {
             /** REDIRECT LOGIC */
             val filterPath = matchingTemplate.filterPath!!.first { FileUtils.contains(it, data) }
             val targetPath = matchingTemplate.redirectPath!!
             
             // 计算新路径
-            val newData = data.replaceFirst(filterPath, targetPath)
-            values.put(MediaStore.MediaColumns.DATA, newData)
+            finalData = data.replaceFirst(filterPath, targetPath)
+            values.put(MediaStore.MediaColumns.DATA, finalData)
             
-            // 同步更新 RELATIVE_PATH，防止数据库字段冲突
-            if (values.containsKey(MediaStore.MediaColumns.RELATIVE_PATH)) {
-                val externalPath = Environment.getExternalStorageDirectory().path
-                if (newData.startsWith(externalPath)) {
-                    val newFile = File(newData)
-                    // 提取相对路径：例如 /storage/emulated/0/Redirect/A.jpg -> Redirect/
-                    val relative = newFile.parentFile?.absolutePath
-                        ?.substringAfter(externalPath)
-                        ?.removePrefix("/")
-                        ?.let { if (it.isEmpty()) it else "$it/" } ?: ""
-                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, relative)
-                }
+            // 核心修复：同步更新 RELATIVE_PATH。
+            // MediaProvider 内部会依赖此字段创建父文件夹，更新它可防止在原始位置产生空文件夹。
+            val externalPath = Environment.getExternalStorageDirectory().path
+            if (finalData.startsWith(externalPath)) {
+                val relative = File(finalData).parentFile?.absolutePath
+                    ?.substringAfter(externalPath)
+                    ?.removePrefix("/")
+                    ?.let { if (it.isEmpty()) it else "$it/" } ?: ""
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, relative)
             }
-            XposedBridge.log("MPM_Redirect: $data -> $newData")
+            XposedBridge.log("MPM_Redirect: [$callingPackage] $data -> $finalData")
         } else {
             /** INTERCEPT LOGIC */
             shouldIntercept = templates.applyTemplates(listOf(data), listOf(mimeType)).first()
@@ -102,10 +101,10 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
                 MediaProviderRecord(
                     0,
                     System.currentTimeMillis(),
-                    param.callingPackage,
+                    callingPackage,
                     match,
                     OP_INSERT,
-                    listOf(data),
+                    listOf(finalData),
                     listOf(mimeType ?: ""),
                     listOf(shouldIntercept)
                 )

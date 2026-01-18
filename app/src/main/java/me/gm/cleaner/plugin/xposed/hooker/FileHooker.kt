@@ -16,8 +16,9 @@
 
 package me.gm.cleaner.plugin.xposed.hooker
 
-import android.app.AndroidAppHelper
+import android.os.Binder
 import android.os.Environment
+import android.os.Process
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import me.gm.cleaner.plugin.xposed.ManagerService
@@ -34,48 +35,69 @@ class FileHooker(private val service: ManagerService) : XC_MethodHook() {
         val file = param.thisObject as File
         val path = file.absolutePath
         
-        // 1. 获取当前调用者的包名
-        val callingPackage = AndroidAppHelper.currentPackageName()
-        
-        // 2. 获取该应用适用的重定向规则
-        // 过滤出：应用匹配 且 配置了 redirectPath 的模板
-        val templates = service.ruleSp.templates.values.filter {
-            it.applyToApp?.contains(callingPackage) == true && !it.redirectPath.isNullOrBlank()
+        // 1. 获取真实的调用者包名
+        val callingPackage = getRealCallingPackage()
+
+        // 2. 检查重定向规则
+        val templates = service.ruleSp.templates.values.filter { 
+            it.applyToApp?.contains(callingPackage) == true && it.redirectPath != null 
         }
 
-        // 3. 尝试匹配路径并执行重定向
         for (template in templates) {
-            val filterPaths = template.filterPath ?: continue
-            for (filter in filterPaths) {
+            for (filter in template.filterPath ?: emptyList()) {
                 if (FileUtils.contains(filter, path)) {
-                    // 计算重定向后的目标路径
-                    val redirectedPath = path.replaceFirst(filter, template.redirectPath!!)
-                    val redirectedFile = File(redirectedPath)
+                    // 命中重定向规则
+                    val targetPath = template.redirectPath!!
+                    val redirectedPath = path.replaceFirst(filter, targetPath)
                     
-                    try {
-                        // 执行实际的创建操作（重定向到新位置）
-                        if (param.method.name == "mkdir") {
-                            param.result = redirectedFile.mkdir()
-                        } else {
-                            param.result = redirectedFile.mkdirs()
-                        }
-                        XposedBridge.log("MPM_FileRedirect: $callingPackage redirected $path -> $redirectedPath")
-                    } catch (e: Throwable) {
-                        XposedBridge.log("MPM_FileRedirect_Error: ${e.message}")
-                        param.result = false
+                    XposedBridge.log("MPM_FileHooker: [$callingPackage] mkdir blocked/redirected: $path -> $redirectedPath")
+                    
+                    // 策略：不让它在原位置创建
+                    // 尝试在重定向位置创建 (FUSE补充逻辑)
+                    val redirectedFile = File(redirectedPath)
+                    if (!redirectedFile.exists()) {
+                        // 递归调用 mkdirs 会触发第二次 Hook，但因为路径已变，不会死循环
+                        param.result = redirectedFile.mkdirs()
+                    } else {
+                        param.result = true
                     }
-                    // 一旦匹配并处理，直接返回，不再执行后续逻辑
                     return
                 }
             }
         }
 
-        // 4. 兜底逻辑：如果不在重定向规则内，执行原有的标准目录保护逻辑
+        // 3. 原有的标准目录保护逻辑
         if (FileUtils.contains(FileUtils.externalStorageDirPath, file) &&
             standardParents.none { FileUtils.contains(it, file) }
         ) {
-            XposedBridge.log("MPM_Rejected ${param.method.name}: $path (Package: $callingPackage)")
+            XposedBridge.log("MPM_FileHooker: rejected standard dir restriction: $file")
             param.result = false
+        }
+    }
+
+    private fun getRealCallingPackage(): String {
+        val uid = Binder.getCallingUid()
+        // 如果调用者 UID 和当前进程 UID (MediaProvider) 相同，说明是内部调用
+        // 但这里我们主要关注"应用通过 MediaProvider 间接调用"的情况
+        // MediaProvider 通常通过 Binder 响应请求
+        
+        if (uid == Process.myUid()) {
+            // 如果是 MediaProvider 自己调用，尝试获取当前应用上下文
+            // 注意：当 InsertHooker 工作时，callingPackage 已经在 MethodHookParam 里获取到了
+            // 但 File.mkdir 没有这个参数，只能依赖 AndroidAppHelper (在非 MP 进程) 或者 Binder (在 MP 进程)
+            
+            // 简单的回退：如果是内部操作，可能是之前 InsertHooker 已经修改过路径了
+            // 这里返回包名可能意义不大，或者是 "android.media"
+            return "com.android.providers.media" 
+        }
+
+        // 如果是 IPC 调用，解析 UID 为包名
+        val pm = service.context.packageManager
+        val packages = pm.getPackagesForUid(uid)
+        return if (!packages.isNullOrEmpty()) {
+            packages[0] // 返回第一个包名，通常足够识别应用
+        } else {
+            "unknown($uid)"
         }
     }
 }
