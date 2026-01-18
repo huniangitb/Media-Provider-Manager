@@ -37,10 +37,14 @@ interface MediaProviderHooker {
 
     val XC_MethodHook.MethodHookParam.callingPackage: String
         get() {
-            ensureMediaProvider()
-            val threadLocal =
-                XposedHelpers.getObjectField(thisObject, "mCallingIdentity") as ThreadLocal<*>
-            return XposedHelpers.callMethod(threadLocal.get(), "getPackageName") as String
+            return try {
+                // 优先使用官方方法，能更准确抓到 Binder 调用者
+                XposedHelpers.callMethod(thisObject, "getCallingPackage") as String
+            } catch (e: Throwable) {
+                // 回退方案
+                val threadLocal = XposedHelpers.getObjectField(thisObject, "mCallingIdentity") as ThreadLocal<*>
+                XposedHelpers.callMethod(threadLocal.get(), "getPackageName") as String
+            }
         }
 
     val XC_MethodHook.MethodHookParam.isCallingPackageAllowedHidden: Boolean

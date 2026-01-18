@@ -1,10 +1,9 @@
 package me.gm.cleaner.plugin.xposed.hooker
 
-import android.content.ClipDescription
 import android.content.ContentValues
+import android.content.ClipDescription
 import android.net.Uri
 import android.os.Build
-import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.text.TextUtils
@@ -49,26 +48,35 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
         val callingPackage = param.callingPackage
         val templates = service.ruleSp.templates.filterTemplate(javaClass, callingPackage)
         
-        // 查找匹配的重定向规则
-        val matchingTemplate = templates.values.firstOrNull { template ->
-            template.redirectPath != null && template.filterPath?.any { FileUtils.contains(it, data) } == true
-        }
+        // 查找匹配的重定向规则 (最长前缀匹配)
+        // 1. 先过滤出配置了 redirectPath 的规则
+        // 2. 展开所有规则中的 filterPath
+        // 3. 找到能作为 data 前缀的 filterPath
+        // 4. 选择最长的 filterPath 以确保匹配最精确的子目录规则
+        val matchingTemplate = templates.values
+            .filter { it.redirectPath != null }
+            .flatMap { t -> t.filterPath?.map { p -> t to p } ?: emptyList() }
+            .filter { (_, filterPath) -> FileUtils.contains(filterPath, data) } // contains 实际上是 startsWith 逻辑
+            .maxByOrNull { it.second.length }
 
         var finalData = data
         if (matchingTemplate != null) {
             /** REDIRECT LOGIC */
-            val filterPath = matchingTemplate.filterPath!!.first { FileUtils.contains(it, data) }
-            val targetPath = matchingTemplate.redirectPath!!
+            val (template, filterPath) = matchingTemplate
+            val targetRoot = template.redirectPath!!
             
-            // 计算新路径
-            finalData = data.replaceFirst(filterPath, targetPath)
+            // 递归转换路径：保留 filterPath 之后的子目录结构
+            // 例如: data = /A/B/C/img.jpg, filter = /A/B/, target = /X/Y/
+            // result = /X/Y/C/img.jpg
+            finalData = data.replaceFirst(filterPath, targetRoot)
             values.put(MediaStore.MediaColumns.DATA, finalData)
             
             // 核心修复：同步更新 RELATIVE_PATH。
             // MediaProvider 内部会依赖此字段创建父文件夹，更新它可防止在原始位置产生空文件夹。
             val externalPath = Environment.getExternalStorageDirectory().path
             if (finalData.startsWith(externalPath)) {
-                val relative = File(finalData).parentFile?.absolutePath
+                val newFile = File(finalData)
+                val relative = newFile.parentFile?.absolutePath
                     ?.substringAfter(externalPath)
                     ?.removePrefix("/")
                     ?.let { if (it.isEmpty()) it else "$it/" } ?: ""
