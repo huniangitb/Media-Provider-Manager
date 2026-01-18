@@ -55,7 +55,6 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
         if (param.callingPackage in
             setOf("com.android.providers.media", "com.android.providers.media.module")
         ) {
-            // Scanning files and internal queries.
             return
         }
 
@@ -90,16 +89,29 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
             else -> projection + arrayOf(FileColumns.DATA, FileColumns.MIME_TYPE)
         }
         val helper = XposedHelpers.callMethod(param.thisObject, "getDatabaseForUri", uri)
+
+        /** 适配 getQueryBuilder 的不同版本签名 */
         val qb = when {
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> XposedHelpers.callMethod(
-                param.thisObject, "getQueryBuilder", TYPE_QUERY, table, uri, query,
-                object : Consumer<String> {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                val honoredArgsConsumer = object : Consumer<String> {
                     override fun accept(t: String) {
                         honoredArgs.add(t)
                     }
-                },
-                Optional.empty<Any>()
-            )
+                }
+                try {
+                    // 尝试 6 参数版本 (部分 Android 11+ / OEM)
+                    XposedHelpers.callMethod(
+                        param.thisObject, "getQueryBuilder", TYPE_QUERY, table, uri, query,
+                        honoredArgsConsumer, Optional.empty<Any>()
+                    )
+                } catch (e: NoSuchMethodError) {
+                    // 回退到 5 参数版本 (标准 Android 11/12)
+                    XposedHelpers.callMethod(
+                        param.thisObject, "getQueryBuilder", TYPE_QUERY, table, uri, query,
+                        honoredArgsConsumer
+                    )
+                }
+            }
 
             Build.VERSION.SDK_INT == Build.VERSION_CODES.Q -> XposedHelpers.callMethod(
                 param.thisObject, "getQueryBuilder", TYPE_QUERY, uri, table, query
@@ -168,26 +180,23 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
             return
         }
 
-        /** 获取重定向和拦截规则 */
-        val templates = service.ruleSp.templates.filterTemplate(javaClass, param.callingPackage)
+        val callingPackage = param.callingPackage
+        val templates = service.ruleSp.templates.filterTemplate(javaClass, callingPackage)
         
-        // 1. 提取数据用于过滤和日志记录
         val dataColumn = c.getColumnIndexOrThrow(FileColumns.DATA)
         val mimeTypeColumn = c.getColumnIndex(FileColumns.MIME_TYPE)
         val dataList = mutableListOf<String>()
         val mimeTypeList = mutableListOf<String>()
         while (c.moveToNext()) {
-            dataList += c.getString(dataColumn)
-            mimeTypeList += c.getString(mimeTypeColumn)
+            dataList += c.getString(dataColumn) ?: ""
+            mimeTypeList += if (mimeTypeColumn != -1) c.getString(mimeTypeColumn) ?: "" else ""
         }
 
-        // 2. 处理重定向 (路径还原)
         val redirectionMap = mutableMapOf<String, String>()
         templates.values.forEach { template ->
             val redirectPath = template.redirectPath
             if (!redirectPath.isNullOrEmpty()) {
                 template.filterPath?.forEach { originalPath ->
-                    // 建立 真实路径 -> 原始路径 的映射
                     redirectionMap[redirectPath] = originalPath
                 }
             }
@@ -198,7 +207,6 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
             wrappedCursor = RedirectedCursor(c, redirectionMap)
         }
 
-        // 3. 处理拦截 (过滤)
         val shouldIntercept = templates.applyTemplates(dataList, mimeTypeList)
         if (shouldIntercept.any { it }) {
             wrappedCursor.moveToFirst()
@@ -219,7 +227,7 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
                 MediaProviderRecord(
                     0,
                     System.currentTimeMillis(),
-                    param.callingPackage,
+                    callingPackage,
                     table,
                     OP_QUERY,
                     if (dataList.size < MAX_SIZE) dataList else dataList.subList(0, MAX_SIZE),
@@ -231,9 +239,6 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
         }
     }
 
-    /**
-     * 自定义 CursorWrapper，用于在应用读取时将重定向后的真实路径还原为原始路径。
-     */
     private class RedirectedCursor(cursor: Cursor, private val redirectMap: Map<String, String>) : CursorWrapper(cursor) {
         private val dataColumnIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
 
@@ -261,7 +266,6 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
         }
         val start = queryArgs.getString(ContentResolver.QUERY_ARG_SQL_SELECTION)!!.toLong()
         val end = queryArgs.getString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER)!!.toLong()
-        val packageNames = queryArgs.getStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS)
         return service.dao.loadForTimeMillis(start, end, *table.map { it.toInt() }.toIntArray())
     }
 
