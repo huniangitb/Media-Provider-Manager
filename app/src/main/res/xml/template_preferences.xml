@@ -1,37 +1,10 @@
-<?xml version="1.0" encoding="utf-8"?>
-
-<!--
-  ~ Copyright 2021 Green Mushroom
-  ~
-  ~ Licensed under the Apache License, Version 2.0 (the "License");
-  ~ you may not use this file except in compliance with the License.
-  ~ You may obtain a copy of the License at
-  ~
-  ~     http://www.apache.org/licenses/LICENSE-2.0
-  ~
-  ~ Unless required by applicable law or agreed to in writing, software
-  ~ distributed under the License is distributed on an "AS IS" BASIS,
-  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  ~ See the License for the specific language governing permissions and
-  ~ limitations under the License.
-  -->
-
 <PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
 
-
-<EditTextPreference
-    app:iconSpaceReserved="false"
-    app:key="@string/template_name_key"
-    app:title="@string/template_name_title"
-    app:useSimpleSummaryProvider="true" />
-
-<!-- 2. 重定向路径 (新增的) -->
-<EditTextPreference
-    app:iconSpaceReserved="false"
-    app:key="@string/redirect_path_key"
-    app:title="@string/redirect_path_title"
-    app:summary="@string/redirect_path_summary"
-    app:useSimpleSummaryProvider="true" />
+    <EditTextPreference
+        app:iconSpaceReserved="false"
+        app:key="@string/template_name_key"
+        app:title="@string/template_name_title"
+        app:useSimpleSummaryProvider="true" />
 
     <me.gm.cleaner.plugin.ui.module.settings.preference.RefinedMultiSelectListPreference
         app:defaultValue="@array/hook_operation_entryValues"
@@ -57,10 +30,18 @@
         app:key="@string/permitted_media_types_key"
         app:title="@string/permitted_media_types_title" />
 
-    <me.gm.cleaner.plugin.ui.module.settings.preference.PathListPreference
-        app:dependency="@string/hook_operation_key"
-        app:iconSpaceReserved="false"
-        app:key="@string/filter_path_key"
-        app:title="@string/filter_path_title" />
+    <androidx.preference.PreferenceCategory app:title="Path Configuration">
+        <me.gm.cleaner.plugin.ui.module.settings.preference.PathListPreference
+            app:dependency="@string/hook_operation_key"
+            app:iconSpaceReserved="false"
+            app:key="@string/filter_path_key"
+            app:title="Filter Paths (Block/Hide)"
+            app:dialogTitle="Edit Filter Paths" />
+
+        <me.gm.cleaner.plugin.ui.module.settings.preference.RedirectRuleListPreference
+            app:key="@string/redirect_rules_key"
+            app:title="Redirection Rules"
+            app:dialogTitle="Edit Redirections" />
+    </androidx.preference.PreferenceCategory>
 
 </PreferenceScreen>

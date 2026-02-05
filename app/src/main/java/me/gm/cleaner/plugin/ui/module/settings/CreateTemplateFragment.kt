@@ -1,19 +1,3 @@
-/*
- * Copyright 2021 Green Mushroom
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package me.gm.cleaner.plugin.ui.module.settings
 
 import android.annotation.SuppressLint
@@ -48,8 +32,9 @@ import me.gm.cleaner.plugin.ui.module.settings.preference.MaterialEditTextPrefer
 import me.gm.cleaner.plugin.ui.module.settings.preference.MaterialMultiSelectListPreferenceDialogFragmentCompat
 import me.gm.cleaner.plugin.ui.module.settings.preference.PathListPreference
 import me.gm.cleaner.plugin.ui.module.settings.preference.PathListPreferenceFragmentCompat
+import me.gm.cleaner.plugin.ui.module.settings.preference.RedirectRuleListPreference
+import me.gm.cleaner.plugin.ui.module.settings.preference.RedirectRuleListPreferenceFragmentCompat
 import me.gm.cleaner.plugin.ui.module.settings.preference.RefinedMultiSelectListPreference
-import kotlin.collections.set
 
 class CreateTemplateFragment : AbsSettingsFragment() {
     override val who: Int
@@ -138,6 +123,25 @@ class CreateTemplateFragment : AbsSettingsFragment() {
             findPreference<RefinedMultiSelectListPreference>(permittedMediaTypes)
                 ?.values = it.toSet()
         }
+
+        val redirectRulesKey = getString(R.string.redirect_rules_key)
+        val redirectPref = findPreference<RedirectRuleListPreference>(redirectRulesKey)
+        if (redirectPref != null) {
+            val templateName = tempSp.getString(getString(R.string.template_name_key), NULL_TEMPLATE_NAME)
+            val template = try {
+                Templates(binderViewModel.readSp(R.xml.template_preferences)).values.find {
+                    it.templateName == (if (args.templateName != null) args.templateName else templateName)
+                }
+            } catch (e: Exception) { null }
+
+            if (template != null) {
+                redirectPref.rules = template.redirectRules ?: emptyList()
+            }
+        }
+
+        redirectPref?.onPreferenceChangeListener = Preference.OnPreferenceChangeListener { _, newValue ->
+            true
+        }
     }
 
     override fun onCreateView(
@@ -184,6 +188,7 @@ class CreateTemplateFragment : AbsSettingsFragment() {
                 .newInstance(preference.key)
 
             is PathListPreference -> PathListPreferenceFragmentCompat.newInstance(preference.key)
+            is RedirectRuleListPreference -> RedirectRuleListPreferenceFragmentCompat.newInstance(preference.key)
             else -> {
                 super.onDisplayPreferenceDialog(preference)
                 return
@@ -202,12 +207,21 @@ class CreateTemplateFragment : AbsSettingsFragment() {
         val templateName = tempSp.getString(getString(R.string.template_name_key), null)
         val hookOperationValues =
             findPreference<MultiSelectListPreference>(getString(R.string.hook_operation_key))?.values
+        val redirectRules = findPreference<RedirectRuleListPreference>(getString(R.string.redirect_rules_key))?.rules
+        val filterPaths = findPreference<PathListPreference>(getString(R.string.filter_path_key))?.values?.toList()
         if (!templateName.isNullOrEmpty() && hookOperationValues?.isNotEmpty() == true) {
-            val template = Gson().fromJson(tempSp.delegate.toString(), Template::class.java)
+            val baseTemplate = Gson().fromJson(tempSp.delegate.toString(), Template::class.java)
+            val newTemplate = baseTemplate.copy(
+                templateName = templateName,
+                hookOperation = hookOperationValues.toList(),
+                filterPath = filterPaths,
+                redirectRules = redirectRules,
+                redirectPath = null
+            )
             val json = Gson().toJson(
                 Templates(binderViewModel.readSp(R.xml.template_preferences)).values.filterNot {
                     it.templateName == templateName || it.templateName == args.templateName
-                } + template
+                } + newTemplate
             )
             binderViewModel.writeSp(who, json)
         }

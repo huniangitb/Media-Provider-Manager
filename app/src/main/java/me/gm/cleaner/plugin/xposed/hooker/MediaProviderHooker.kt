@@ -38,9 +38,24 @@ interface MediaProviderHooker {
     val XC_MethodHook.MethodHookParam.callingPackage: String
         get() {
             ensureMediaProvider()
-            val threadLocal =
-                XposedHelpers.getObjectField(thisObject, "mCallingIdentity") as ThreadLocal<*>
-            return XposedHelpers.callMethod(threadLocal.get(), "getPackageName") as String
+            // 1. 尝试官方 API
+            try {
+                val pkg = XposedHelpers.callMethod(thisObject, "getCallingPackage") as? String
+                if (pkg != null) return pkg
+            } catch (ignored: Throwable) {}
+
+            // 2. 尝试内部 mCallingIdentity
+            try {
+                val threadLocal = XposedHelpers.getObjectField(thisObject, "mCallingIdentity") as? ThreadLocal<*>
+                val identity = threadLocal?.get()
+                if (identity != null) {
+                    val pkg = XposedHelpers.callMethod(identity, "getPackageName") as? String
+                    if (pkg != null) return pkg
+                }
+            } catch (ignored: Throwable) {}
+
+            // 3. 兜底：如果是内部扫描或未知来源，归属给 MediaProvider，防止数据库插入 Crash
+            return "com.android.providers.media"
         }
 
     val XC_MethodHook.MethodHookParam.isCallingPackageAllowedHidden: Boolean

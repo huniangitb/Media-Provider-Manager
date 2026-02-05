@@ -77,12 +77,31 @@
     <string name="hook_operation_title">挂钩操作</string>
     <string name="apply_to_app_title">应用到应用</string>
     <string name="permitted_media_types_title">允许的媒体类型</string>
-    <string name="filter_path_title">过滤路径</string>
-<string name="redirect_path_key">redirect_path</string>
-<string name="redirect_path_title">重定向至</string>
-<string name="redirect_path_summary">匹配的文件将被实际存储到此目录</string>
+
+    <!-- [重定向规则部分 - 修改点] -->
+    <string name="redirect_rules_key" translatable="false">redirect_rules</string>
+    <string name="redirect_rules_title">重定向规则</string>
+    <string name="redirect_rules_dialog_title">编辑重定向列表</string>
+    <string name="redirect_rules_summary">已配置 %d 条重定向规则</string>
+    <string name="add_redirect_rule">添加重定向规则</string>
+    <string name="edit_redirect_rule">编辑重定向规则</string>
+    <string name="source_path_title">原始路径 (App 视角)</string>
+    <string name="target_path_title">目标路径 (实际存储位置)</string>
+    <string name="source_path_hint">例如：/storage/emulated/0/Tencent/QQ</string>
+    <string name="target_path_hint">文件实际存放的绝对路径</string>
+    
+    <!-- 保持兼容，标记为废弃或仅供参考 -->
+    <string name="redirect_path_key">redirect_path</string>
+    <string name="redirect_path_title">重定向至 (旧版)</string>
+    <string name="redirect_path_summary">匹配的文件将被实际存储到此目录</string>
+
+    <!-- [文件过滤部分] -->
+    <string name="filter_path_title">过滤路径 (拦截/隐藏)</string>
+    <string name="filter_path_dialog_title">编辑过滤路径列表</string>
+    
     <string name="add_path">添加路径</string>
     <string name="save">保存</string>
+    <string name="not_set">未设置</string>
     <string name="quit_without_save">更改未保存，您确定要退出吗？</string>
 
     <!-- 媒体存储 -->

@@ -87,11 +87,31 @@
     <string name="create_template_title">Create template</string>
     <string name="edit_template_title">Edit template</string>
     <string name="template_name_key" translatable="false">template_name</string>
-<string name="redirect_path_key">redirect_path</string>
-<string name="redirect_path_title">Redirect to</string>
-<string name="redirect_path_summary">Files will be actually stored in this directory</string>
     <string name="template_name_title">Template name</string>
     <string name="template_name_not_unique">The template name is not unique.</string>
+
+    <!-- [Redirection Section - 改动部分] -->
+    <string name="redirect_rules_key" translatable="false">redirect_rules</string>
+    <string name="redirect_rules_title">Redirection rules</string>
+    <string name="redirect_rules_dialog_title">Edit redirections</string>
+    <string name="redirect_rules_summary">%d rule(s) configured</string>
+    <string name="add_redirect_rule">Add a redirection rule</string>
+    <string name="edit_redirect_rule">Edit redirection rule</string>
+    <string name="source_path_title">Source path (Original)</string>
+    <string name="target_path_title">Target path (Redirect to)</string>
+    <string name="source_path_hint">e.g. /storage/emulated/0/Tencent/QQ</string>
+    <string name="target_path_hint">Actual location to store files</string>
+    
+    <!-- 保持兼容，标记为废弃或仅供参考 -->
+    <string name="redirect_path_key" translatable="false">redirect_path</string>
+    <string name="redirect_path_title">Redirect to (Legacy)</string>
+    <string name="redirect_path_summary">Files will be actually stored in this directory</string>
+
+    <!-- [Filtering Section] -->
+    <string name="filter_path_key" translatable="false">filter_path</string>
+    <string name="filter_path_title">Filter path (Block/Hide)</string>
+    <string name="filter_path_dialog_title">Edit filter paths</string>
+    
     <string name="hook_operation_key" translatable="false">hook_operation</string>
     <string name="hook_operation_title">Hook operation</string>
     <string name="hook_operation_query" translatable="false">query</string>
@@ -107,10 +127,9 @@
     <string name="media_type_image" translatable="false">1</string>
     <string name="media_type_document" translatable="false">6</string>
     <string name="media_type_none" translatable="false">0</string>
-    <string name="filter_path_key" translatable="false">filter_path</string>
-    <string name="filter_path_title">Filter path</string>
     <string name="add_path">Add a path</string>
     <string name="save">Save</string>
+    <string name="not_set">Not set</string>
     <string name="quit_without_save">Changes aren\'t saved yet, are you sure you want to quit?</string>
 
     <!-- Media Store -->
@@ -159,7 +178,4 @@
         click Create template, remove Insert from Hook operation, and remove Image from Permitted media types.
         Click Start can add this rule directly.\nThen switch to the Images page and the Files page to see if you can see the image.</string>
 
-    <!--    <string name="playground_title_do_it_yourself">Do It Yourself</string>-->
-    <!--    <string name="do_it_yourself_title"></string>-->
-    <!--    <string name="do_it_yourself_summary"></string>-->
 </resources>

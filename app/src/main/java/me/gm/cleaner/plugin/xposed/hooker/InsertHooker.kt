@@ -40,51 +40,52 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
         var mimeType = values.getAsString(MediaStore.MediaColumns.MIME_TYPE)
         val wasPathEmpty = wasPathEmpty(values)
         if (wasPathEmpty) {
-            // 这里的 ensureUniqueFileColumns 会根据 RELATIVE_PATH 生成 DATA 绝对路径
             ensureUniqueFileColumns(param.thisObject, match, uri, values, mimeType)
         }
         val data = values.getAsString(MediaStore.MediaColumns.DATA) ?: ""
+        val callingPackage = param.callingPackage
+        val templates = service.ruleSp.templates.filterTemplate(javaClass, callingPackage)
+
+        /** REDIRECT LOGIC (使用 redirectRules) */
+        var finalData = data
+        var redirected = false
         
-        var shouldIntercept = false
-        val templates = service.ruleSp.templates.filterTemplate(javaClass, param.callingPackage)
-        
-        // 查找匹配的重定向规则
-        val matchingTemplate = templates.values.firstOrNull { template ->
-            template.redirectPath != null && template.filterPath?.any { FileUtils.contains(it, data) } == true
+        // 查找匹配的重定向规则，优先匹配最长的 source 路径
+        val activeRule = templates.values
+            .flatMap { it.redirectRules ?: emptyList() }
+            .filter { rule -> 
+                data.startsWith(rule.source) 
+            }
+            .maxByOrNull { it.source.length }
+
+        if (activeRule != null) {
+            finalData = data.replaceFirst(activeRule.source, activeRule.target)
+            values.put(MediaStore.MediaColumns.DATA, finalData)
+            
+            // 处理 RELATIVE_PATH，防止产生空文件夹
+            val externalPath = Environment.getExternalStorageDirectory().path
+            if (finalData.startsWith(externalPath)) {
+                val newFile = File(finalData)
+                val relative = newFile.parentFile?.absolutePath
+                    ?.substringAfter(externalPath)
+                    ?.removePrefix("/")
+                    ?.let { if (it.isEmpty()) it else "$it/" } ?: ""
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, relative)
+            }
+            redirected = true
+            XposedBridge.log("MPM_Redirect_Insert: [$callingPackage] $data -> $finalData")
         }
 
-        if (matchingTemplate != null) {
-            /** REDIRECT LOGIC */
-            val filterPath = matchingTemplate.filterPath!!.first { FileUtils.contains(it, data) }
-            val targetPath = matchingTemplate.redirectPath!!
-            
-            // 计算新路径
-            val newData = data.replaceFirst(filterPath, targetPath)
-            values.put(MediaStore.MediaColumns.DATA, newData)
-            
-            // 同步更新 RELATIVE_PATH，防止数据库字段冲突
-            if (values.containsKey(MediaStore.MediaColumns.RELATIVE_PATH)) {
-                val externalPath = Environment.getExternalStorageDirectory().path
-                if (newData.startsWith(externalPath)) {
-                    val newFile = File(newData)
-                    // 提取相对路径：例如 /storage/emulated/0/Redirect/A.jpg -> Redirect/
-                    val relative = newFile.parentFile?.absolutePath
-                        ?.substringAfter(externalPath)
-                        ?.removePrefix("/")
-                        ?.let { if (it.isEmpty()) it else "$it/" } ?: ""
-                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, relative)
-                }
-            }
-            XposedBridge.log("MPM_Redirect: $data -> $newData")
-        } else {
-            /** INTERCEPT LOGIC */
+        /** INTERCEPT LOGIC (使用 filterPath 和 mimeType) */
+        var shouldIntercept = false
+        if (!redirected) {
             shouldIntercept = templates.applyTemplates(listOf(data), listOf(mimeType)).first()
             if (shouldIntercept) {
                 param.result = null
             }
         }
 
-        // 兼容性清理：恢复原始状态以适配 MediaProvider 后续逻辑
+        // 兼容性清理
         if (mimeType.isNullOrEmpty()) {
             mimeType = values.getAsString(MediaStore.MediaColumns.MIME_TYPE)
             values.remove(MediaStore.MediaColumns.MIME_TYPE)
@@ -102,10 +103,10 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
                 MediaProviderRecord(
                     0,
                     System.currentTimeMillis(),
-                    param.callingPackage,
+                    callingPackage,
                     match,
                     OP_INSERT,
-                    listOf(data),
+                    listOf(finalData),
                     listOf(mimeType ?: ""),
                     listOf(shouldIntercept)
                 )
