@@ -50,4 +50,4 @@ class FileHooker(private val service: ManagerService) : XC_MethodHook() {
             }
         }
     }
-}1
+}
