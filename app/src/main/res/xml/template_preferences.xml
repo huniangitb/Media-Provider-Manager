@@ -30,18 +30,19 @@
         app:key="@string/permitted_media_types_key"
         app:title="@string/permitted_media_types_title" />
 
-    <androidx.preference.PreferenceCategory app:title="Path Configuration">
+    <!-- 修改点：使用了 @string 引用 -->
+    <androidx.preference.PreferenceCategory app:title="@string/path_config_title">
         <me.gm.cleaner.plugin.ui.module.settings.preference.PathListPreference
             app:dependency="@string/hook_operation_key"
             app:iconSpaceReserved="false"
             app:key="@string/filter_path_key"
-            app:title="Filter Paths (Block/Hide)"
-            app:dialogTitle="Edit Filter Paths" />
+            app:title="@string/filter_path_title"
+            app:dialogTitle="@string/filter_path_dialog_title" />
 
         <me.gm.cleaner.plugin.ui.module.settings.preference.RedirectRuleListPreference
             app:key="@string/redirect_rules_key"
-            app:title="Redirection Rules"
-            app:dialogTitle="Edit Redirections" />
+            app:title="@string/redirect_rules_title"
+            app:dialogTitle="@string/redirect_rules_dialog_title" />
     </androidx.preference.PreferenceCategory>
 
 </PreferenceScreen>

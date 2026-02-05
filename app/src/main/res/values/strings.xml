@@ -89,7 +89,7 @@
     <string name="template_name_key" translatable="false">template_name</string>
     <string name="template_name_title">Template name</string>
     <string name="template_name_not_unique">The template name is not unique.</string>
-
+    <string name="path_config_title">Path Configuration</string>
     <!-- [Redirection Section - 改动部分] -->
     <string name="redirect_rules_key" translatable="false">redirect_rules</string>
     <string name="redirect_rules_title">Redirection rules</string>
