@@ -40,6 +40,8 @@
             app:dialogTitle="@string/filter_path_dialog_title" />
 
         <me.gm.cleaner.plugin.ui.module.settings.preference.RedirectRuleListPreference
+            app:iconSpaceReserved="false"
+            app:dependency="@string/hook_operation_key"
             app:key="@string/redirect_rules_key"
             app:title="@string/redirect_rules_title"
             app:dialogTitle="@string/redirect_rules_dialog_title" />
