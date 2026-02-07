@@ -31,7 +31,7 @@
         app:title="@string/permitted_media_types_title" />
 
     <!-- 修改点：使用了 @string 引用 -->
-    <androidx.preference.PreferenceCategory app:title="@string/path_config_title">
+    <androidx.preference.PreferenceCategory app:title="@string/path_config_title" app:iconSpaceReserved="false">
         <me.gm.cleaner.plugin.ui.module.settings.preference.PathListPreference
             app:dependency="@string/hook_operation_key"
             app:iconSpaceReserved="false"
