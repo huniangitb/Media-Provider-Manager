@@ -31,7 +31,10 @@ jobs:
 
     # 仅构建 Release 版本 APK
     - name: Build with Gradle
-      run: ./gradlew assembleRelease
+      run: 
+           
+           ./gradlew dependencyUpdates -Drevision=release
+           ./gradlew assembleRelease
 
     # 1. 保存 APK 到 Github Artifacts (Action 页面可下载)
     - name: Upload Artifact
