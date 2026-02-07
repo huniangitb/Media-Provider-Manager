@@ -47,15 +47,21 @@ class AppListLoader(private val defaultDispatcher: CoroutineDispatcher = Dispatc
         val size = installedPackages.size
         val count = AtomicInteger(0)
         installedPackages.mapNotNull { pi ->
-            val ai = pi.applicationInfo ?: return@mapNotNull null
-            ensureActive()
-            l?.onProgress(100 * count.incrementAndGet() / size)
-            AppListModel(
-                pi,
-                pm.getApplicationLabel(pi.applicationInfo).toString(),
-                packageNameToRuleCount.getOrDefault(pi.packageName, 0),
-            )
-        }
+    // 1. 将其赋值给局部变量 ai
+    val ai = pi.applicationInfo 
+    // 2. 对局部变量进行判空，如果为空则跳过该应用
+    if (ai == null) return@mapNotNull null 
+
+    ensureActive()
+    l?.onProgress(100 * count.incrementAndGet() / size)
+    
+    AppListModel(
+        pi,
+        // 3. 传入局部变量 ai，编译器此时允许智能转换
+        pm.getApplicationLabel(ai).toString(), 
+        packageNameToRuleCount.getOrDefault(pi.packageName, 0),
+    )
+}
     }
 
     suspend fun update(old: List<AppListModel>, binderViewModel: BinderViewModel) =
