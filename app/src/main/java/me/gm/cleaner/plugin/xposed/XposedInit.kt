@@ -1,19 +1,3 @@
-/*
- * Copyright 2021 Green Mushroom
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package me.gm.cleaner.plugin.xposed
 
 import android.content.ContentProvider
@@ -32,7 +16,6 @@ import me.gm.cleaner.plugin.xposed.hooker.QueryHooker
 import java.io.File
 
 class XposedInit : ManagerService(), IXposedHookLoadPackage, IXposedHookZygoteInit {
-
     @Throws(Throwable::class)
     private fun onMediaProviderLoaded(lpparam: LoadPackageParam, context: Context) {
         val mediaProvider = try {
@@ -42,11 +25,8 @@ class XposedInit : ManagerService(), IXposedHookLoadPackage, IXposedHookZygoteIn
         } catch (e: XposedHelpers.ClassNotFoundError) {
             return
         }
-        // 保存 MediaProvider 的 classLoader
         classLoader = lpparam.classLoader
         onCreate(context)
-        
-        // 修复点：传入 this@XposedInit 作为 service 参数
         XposedBridge.hookAllMethods(
             mediaProvider, "queryInternal", QueryHooker(this@XposedInit)
         )
@@ -60,9 +40,19 @@ class XposedInit : ManagerService(), IXposedHookLoadPackage, IXposedHookZygoteIn
 
     @Throws(Throwable::class)
     private fun onDownloadManagerLoaded(lpparam: LoadPackageParam, context: Context) {
-        // 修复点：FileHooker 现在也需要 service 参数来读取重定向规则
-        XposedHelpers.findAndHookMethod(File::class.java, "mkdir", FileHooker(this@XposedInit))
-        XposedHelpers.findAndHookMethod(File::class.java, "mkdirs", FileHooker(this@XposedInit))
+        // 修改：传入 DownloadManager 的包名
+        val hooker = FileHooker(this@XposedInit, "com.android.providers.downloads")
+        XposedHelpers.findAndHookMethod(File::class.java, "mkdir", hooker)
+        XposedHelpers.findAndHookMethod(File::class.java, "mkdirs", hooker)
+    }
+
+    // 新增：外部存储加载时的逻辑
+    @Throws(Throwable::class)
+    private fun onExternalStorageLoaded(lpparam: LoadPackageParam, context: Context) {
+        // 修改：传入 ExternalStorage 的包名
+        val hooker = FileHooker(this@XposedInit, "com.android.externalstorage")
+        XposedHelpers.findAndHookMethod(File::class.java, "mkdir", hooker)
+        XposedHelpers.findAndHookMethod(File::class.java, "mkdirs", hooker)
     }
 
     @Throws(Throwable::class)
@@ -78,10 +68,10 @@ class XposedInit : ManagerService(), IXposedHookLoadPackage, IXposedHookZygoteIn
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     val context = param.args[0] as Context
                     val providerInfo = param.args[1] as ProviderInfo
-
                     when (providerInfo.authority) {
                         MediaStore.AUTHORITY -> onMediaProviderLoaded(lpparam, context)
                         Downloads_Impl_AUTHORITY -> onDownloadManagerLoaded(lpparam, context)
+                        EXTERNAL_STORAGE_AUTHORITY -> onExternalStorageLoaded(lpparam, context) // 新增匹配
                     }
                 }
             }
@@ -97,5 +87,6 @@ class XposedInit : ManagerService(), IXposedHookLoadPackage, IXposedHookZygoteIn
 
     companion object {
         const val Downloads_Impl_AUTHORITY = "downloads"
+        const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents" // 新增常量
     }
 }
