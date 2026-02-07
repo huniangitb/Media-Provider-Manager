@@ -20,6 +20,7 @@
     <array name="recommend_package" tools:ignore="InconsistentArrays">
         <item>com.android.providers.media</item>
         <item>com.android.providers.downloads</item>
+        <item>com.android.externalstorage</item>
     </array>
 
     <array name="hook_operation_entries">
