@@ -5,18 +5,18 @@ apply plugin: 'com.google.devtools.ksp'
 apply plugin: 'dagger.hilt.android.plugin'
 
 def gitCommitCount = Integer.parseInt('git rev-list --count HEAD'.execute([], project.rootDir).text.trim())
-def sdk = 34
+def sdk = 35
 
 android {
     compileSdk sdk
-    buildToolsVersion = '34.0.0'
-
+    buildToolsVersion = '35.0.0'
+ 
     defaultConfig {
         applicationId 'me.gm.cleaner.plugin'
-        minSdk 29
+        minSdk 30
         targetSdk sdk
         versionCode gitCommitCount
-        versionName 'beta13'
+        versionName 'beta15'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         multiDexEnabled false
         resourceConfigurations += ['en', 'zh-rCN', 'zh-rTW']
