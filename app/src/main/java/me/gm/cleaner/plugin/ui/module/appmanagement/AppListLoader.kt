@@ -46,7 +46,8 @@ class AppListLoader(private val defaultDispatcher: CoroutineDispatcher = Dispatc
         val installedPackages = binderViewModel.getInstalledPackages(PackageManager.GET_PERMISSIONS)
         val size = installedPackages.size
         val count = AtomicInteger(0)
-        installedPackages.map { pi ->
+        installedPackages.mapNotNull { pi ->
+            val ai = pi.applicationInfo ?: return@mapNotNull null
             ensureActive()
             l?.onProgress(100 * count.incrementAndGet() / size)
             AppListModel(

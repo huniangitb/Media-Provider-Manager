@@ -32,12 +32,17 @@ class RedirectRuleListPreference @JvmOverloads constructor(
         }
 
     init {
-        // 自定义 Summary，显示规则数量
-        summaryProvider = SummaryProvider<RedirectRuleListPreference> { preference ->
-            if (preference.rules.isEmpty()) {
-                preference.context.getString(R.string.not_set) // 需确保 strings.xml 有此定义
-            } else {
-                "${preference.rules.size} rules configured"
+    summaryProvider = SummaryProvider<RedirectRuleListPreference> { preference ->
+        if (preference.rules.isEmpty()) {
+            // 使用系统或自定义的“未设置”
+            preference.context.getString(me.gm.cleaner.plugin.R.string.not_set)
+        } else {
+            // 【关键点】：不要直接写 "rules configured"
+            // 必须使用 getString 并传入 R.string 的 ID，以及对应的参数
+            preference.context.getString(
+                me.gm.cleaner.plugin.R.string.redirect_rules_summary, 
+                preference.rules.size
+            )
             }
         }
     }
