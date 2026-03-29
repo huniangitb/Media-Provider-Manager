@@ -37,7 +37,7 @@ abstract class ManagerService : IManagerService.Stub() {
     val rootSp by lazy { JsonFileSpImpl(File(context.filesDir, "root")) }
     val ruleSp by lazy { TemplatesJsonFileSpImpl(File(context.filesDir, "rule")) }
     
-    private val socketServer by lazy { UsageRecordSocketServer() }
+    private var socketServer: UsageRecordSocketServer? = null
 
     protected fun onCreate(context: Context) {
         this.context = context
@@ -51,12 +51,13 @@ abstract class ManagerService : IManagerService.Stub() {
             .build()
         dao = database.mediaProviderRecordDao()
 
-        socketServer.start()
+        socketServer = UsageRecordSocketServer()
+        socketServer?.start()
     }
 
     fun recordUsage(record: MediaProviderRecord) {
         dao.insert(record)
-        socketServer.broadcast(record)
+        socketServer?.broadcast(record)
     }
 
     private val packageManagerService: IInterface by lazy {
@@ -137,7 +138,7 @@ abstract class ManagerService : IManagerService.Stub() {
         observers.finishBroadcast()
     }
 
-    inner class UsageRecordSocketServer {
+    class UsageRecordSocketServer {
         private val clients = CopyOnWriteArrayList<LocalSocket>()
         private val gson = Gson()
         private var isRunning = false
@@ -171,8 +172,7 @@ abstract class ManagerService : IManagerService.Stub() {
             )
             val json = gson.toJson(recordMap) + "\n"
             val bytes = json.toByteArray()
-            val iterator = clients.iterator()
-            for (client in iterator) {
+            for (client in clients) {
                 try {
                     client.outputStream.write(bytes)
                     client.outputStream.flush()
