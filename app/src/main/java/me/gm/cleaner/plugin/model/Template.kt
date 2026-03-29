@@ -37,16 +37,22 @@ class Templates(json: String?) {
         }
     }
 
-    fun filterTemplate(cls: Class<*>, packageName: String): Templates {
-        matchingTemplates = _values.filter { template ->
-            when (cls) {
-                QueryHooker::class.java -> template.hookOperation.contains("query")
-                InsertHooker::class.java -> template.hookOperation.contains("insert")
-                else -> throw IllegalArgumentException()
-            } && template.applyToApp?.contains(packageName) == true
+    // 修改 Templates.kt 中的 filterTemplate 方法
+fun filterTemplate(cls: Class<*>, packageName: String): Templates {
+    matchingTemplates = _values.filter { template ->
+        val isOpMatch = when (cls) {
+            QueryHooker::class.java -> template.hookOperation.contains("query")
+            InsertHooker::class.java -> template.hookOperation.contains("insert")
+            else -> throw IllegalArgumentException()
         }
-        return this
+        
+        // 如果 applyToApp 为 null 或为空，则视为匹配所有应用；否则检查包名是否在列表中
+        val isPackageMatch = template.applyToApp.isNullOrEmpty() || template.applyToApp.contains(packageName)
+        
+        isOpMatch && isPackageMatch
     }
+    return this
+}
 
     fun applyTemplates(dataList: List<String>, mimeTypeList: List<String>): List<Boolean> =
         dataList.zip(mimeTypeList).map { (data, mimeType) ->
