@@ -1,8 +1,6 @@
 package me.gm.cleaner.plugin.xposed;
 
 import android.os.FileObserver;
-import android.os.Handler;
-import android.os.Looper;
 import android.text.TextUtils;
 
 import org.json.JSONException;
@@ -13,6 +11,10 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import de.robv.android.xposed.XposedBridge;
 import me.gm.cleaner.plugin.dao.JsonSharedPreferencesImpl;
@@ -22,20 +24,26 @@ public class JsonFileSpImpl extends SharedPreferencesWrapper {
     public final File file;
     protected String contentCache;
     private FileObserver mFileObserver;
-    private final Handler mHandler = new Handler(Looper.getMainLooper());
-    private final Runnable mReloadRunnable = this::reload;
+    
+    private final ScheduledExecutorService mScheduler = Executors.newSingleThreadScheduledExecutor();
+    private ScheduledFuture<?> mScheduledFuture;
 
     public JsonFileSpImpl(File src) {
         file = src;
 
         reload();
 
-        mFileObserver = new FileObserver(src.getParent(), FileObserver.MODIFY | FileObserver.CREATE) {
+        int mask = FileObserver.MODIFY | FileObserver.CREATE | FileObserver.CLOSE_WRITE | FileObserver.MOVED_TO;
+        mFileObserver = new FileObserver(src.getParent(), mask) {
             @Override
             public void onEvent(int event, String path) {
                 if (path != null && path.equals(file.getName())) {
-                    mHandler.removeCallbacks(mReloadRunnable);
-                    mHandler.postDelayed(mReloadRunnable, 1000);
+                    if (mScheduledFuture != null && !mScheduledFuture.isDone()) {
+                        mScheduledFuture.cancel(false);
+                    }
+                    mScheduledFuture = mScheduler.schedule(() -> {
+                        reload();
+                    }, 1000, TimeUnit.MILLISECONDS);
                 }
             }
         };
@@ -45,10 +53,13 @@ public class JsonFileSpImpl extends SharedPreferencesWrapper {
     private void ensureFile() {
         if (!file.exists()) {
             try {
+                File parent = file.getParentFile();
+                if (parent != null && !parent.exists()) {
+                    parent.mkdirs();
+                }
                 file.createNewFile();
             } catch (IOException e) {
                 XposedBridge.log(e);
-                throw new RuntimeException(e);
             }
         }
     }
@@ -65,9 +76,10 @@ public class JsonFileSpImpl extends SharedPreferencesWrapper {
         }
     }
 
-    protected void reload() {
+    public synchronized boolean reload() {
         contentCache = readFromFile();
         JSONObject json;
+        boolean success = true;
         try {
             if (TextUtils.isEmpty(contentCache)) {
                 json = new JSONObject();
@@ -76,8 +88,14 @@ public class JsonFileSpImpl extends SharedPreferencesWrapper {
             }
         } catch (JSONException e) {
             json = new JSONObject();
+            success = false;
+            XposedBridge.log("MPM_Config: Failed to parse JSON in " + file.getName() + ": " + e.getMessage());
         }
         delegate = new JsonSharedPreferencesImpl(json);
+        if (success) {
+            XposedBridge.log("MPM_Config: " + file.getName() + " reloaded successfully.");
+        }
+        return success;
     }
 
     public String read() {

@@ -37,7 +37,8 @@ abstract class ManagerService : IManagerService.Stub() {
     val rootSp by lazy { JsonFileSpImpl(File(context.filesDir, "root")) }
     val ruleSp by lazy { TemplatesJsonFileSpImpl(File(context.filesDir, "rule")) }
     
-    private var socketServer: UsageRecordSocketServer? = null
+    private lateinit var usageRecordSocketServer: UsageRecordSocketServer
+    private lateinit var commandSocketServer: CommandSocketServer
 
     protected fun onCreate(context: Context) {
         this.context = context
@@ -51,13 +52,16 @@ abstract class ManagerService : IManagerService.Stub() {
             .build()
         dao = database.mediaProviderRecordDao()
 
-        socketServer = UsageRecordSocketServer()
-        socketServer?.start()
+        usageRecordSocketServer = UsageRecordSocketServer()
+        usageRecordSocketServer.start()
+
+        commandSocketServer = CommandSocketServer()
+        commandSocketServer.start()
     }
 
     fun recordUsage(record: MediaProviderRecord) {
         dao.insert(record)
-        socketServer?.broadcast(record)
+        usageRecordSocketServer.broadcast(record)
     }
 
     private val packageManagerService: IInterface by lazy {
@@ -138,7 +142,57 @@ abstract class ManagerService : IManagerService.Stub() {
         observers.finishBroadcast()
     }
 
-    class UsageRecordSocketServer {
+    inner class CommandSocketServer {
+        private var isRunning = false
+
+        fun start() {
+            if (isRunning) return
+            isRunning = true
+            thread(name = "CommandSocketServer") {
+                try {
+                    val serverSocket = LocalServerSocket("me.gm.cleaner.command")
+                    while (isRunning) {
+                        val client = serverSocket.accept()
+                        thread { handleClient(client) }
+                    }
+                } catch (e: IOException) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
+        private fun handleClient(client: LocalSocket) {
+            try {
+                client.inputStream.bufferedReader().use { reader ->
+                    client.outputStream.bufferedWriter().use { writer ->
+                        val command = reader.readLine()
+                        if (command != null) {
+                            when (command.trim()) {
+                                "RELOAD_RULES" -> {
+                                    val success = ruleSp.reload()
+                                    writer.write(if (success) "SUCCESS\n" else "FAILED\n")
+                                }
+                                "RELOAD_ROOT" -> {
+                                    val success = rootSp.reload()
+                                    writer.write(if (success) "SUCCESS\n" else "FAILED\n")
+                                }
+                                else -> {
+                                    writer.write("UNKNOWN_COMMAND\n")
+                                }
+                            }
+                            writer.flush()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                try { client.close() } catch (ignored: Exception) {}
+            }
+        }
+    }
+
+    inner class UsageRecordSocketServer {
         private val clients = CopyOnWriteArrayList<LocalSocket>()
         private val gson = Gson()
         private var isRunning = false
@@ -172,7 +226,8 @@ abstract class ManagerService : IManagerService.Stub() {
             )
             val json = gson.toJson(recordMap) + "\n"
             val bytes = json.toByteArray()
-            for (client in clients) {
+            val iterator = clients.iterator()
+            for (client in iterator) {
                 try {
                     client.outputStream.write(bytes)
                     client.outputStream.flush()

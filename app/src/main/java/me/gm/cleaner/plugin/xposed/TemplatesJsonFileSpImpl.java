@@ -2,6 +2,7 @@ package me.gm.cleaner.plugin.xposed;
 
 import java.io.File;
 
+import de.robv.android.xposed.XposedBridge;
 import me.gm.cleaner.plugin.model.Templates;
 
 public final class TemplatesJsonFileSpImpl extends JsonFileSpImpl {
@@ -12,9 +13,17 @@ public final class TemplatesJsonFileSpImpl extends JsonFileSpImpl {
     }
 
     @Override
-    protected void reload() {
-        super.reload();
-        templatesCache = new Templates(contentCache);
+    public synchronized boolean reload() {
+        boolean success = super.reload();
+        if (success) {
+            try {
+                templatesCache = new Templates(contentCache);
+            } catch (Exception e) {
+                success = false;
+                XposedBridge.log("MPM_Config: Failed to parse Templates model: " + e.getMessage());
+            }
+        }
+        return success;
     }
 
     @Override
