@@ -22,7 +22,7 @@ import me.gm.cleaner.plugin.dao.SharedPreferencesWrapper;
 
 public class JsonFileSpImpl extends SharedPreferencesWrapper {
     public final File file;
-    protected String contentCache;
+    protected String contentCache = "";
     private FileObserver mFileObserver;
     
     private final ScheduledExecutorService mScheduler = Executors.newSingleThreadScheduledExecutor();
@@ -33,17 +33,23 @@ public class JsonFileSpImpl extends SharedPreferencesWrapper {
 
         reload();
 
-        int mask = FileObserver.MODIFY | FileObserver.CREATE | FileObserver.CLOSE_WRITE | FileObserver.MOVED_TO | FileObserver.DELETE;
+        // 监听所有事件，确保任何编辑器的操作（覆写、删除重建、原子替换）都能被捕获
+        int mask = FileObserver.ALL_EVENTS;
         mFileObserver = new FileObserver(src.getParent(), mask) {
             @Override
             public void onEvent(int event, String path) {
                 if (path != null && path.equals(file.getName())) {
+                    // 忽略纯读取和打开事件，防止无限循环
+                    if ((event & (FileObserver.ACCESS | FileObserver.OPEN | FileObserver.CLOSE_NOWRITE)) != 0) {
+                        return;
+                    }
                     if (mScheduledFuture != null && !mScheduledFuture.isDone()) {
                         mScheduledFuture.cancel(false);
                     }
+                    // 将延迟缩小至 50ms 实现快速响应
                     mScheduledFuture = mScheduler.schedule(() -> {
                         reload();
-                    }, 1000, TimeUnit.MILLISECONDS);
+                    }, 50, TimeUnit.MILLISECONDS);
                 }
             }
         };
@@ -76,7 +82,12 @@ public class JsonFileSpImpl extends SharedPreferencesWrapper {
     }
 
     public synchronized boolean reload() {
-        contentCache = readFromFile();
+        String newContent = readFromFile();
+        // 若文件内容未发生实质变化，阻断更新防止无意义的重建
+        if (newContent.equals(contentCache)) {
+            return true;
+        }
+        contentCache = newContent;
         JSONObject json;
         try {
             if (TextUtils.isEmpty(contentCache)) {
@@ -85,22 +96,27 @@ public class JsonFileSpImpl extends SharedPreferencesWrapper {
                 json = new JSONObject(contentCache);
             }
         } catch (Throwable e) {
-            // 忽略异常：对于 rules，它是 JSONArray "[...]"，所以会走到这里。
-            // 这是正常现象，我们提供空 JSONObject 保护 SP 逻辑不崩溃即可。
+            // 对于 rule 规则，由于是 JSONArray 结构所以必然会抛异常走到这里，这是正常的，用空对象托底即可
             json = new JSONObject();
         }
         delegate = new JsonSharedPreferencesImpl(json);
-        return contentCache != null;
+        XposedBridge.log("MPM_Config: " + file.getName() + " hot reloaded.");
+        return true;
     }
 
     public String read() {
-        if (contentCache == null) {
-            contentCache = readFromFile();
+        if (contentCache == null || contentCache.isEmpty()) {
+            reload();
         }
         return contentCache;
     }
 
     public void write(String what) {
+        if (what == null) what = "";
+        // 阻止重复写入死循环
+        if (what.equals(contentCache)) {
+            return;
+        }
         contentCache = what;
         try {
             delegate = new JsonSharedPreferencesImpl(new JSONObject(what));

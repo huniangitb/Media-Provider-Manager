@@ -12,17 +12,10 @@ public final class TemplatesJsonFileSpImpl extends JsonFileSpImpl {
 
     @Override
     public synchronized boolean reload() {
-        boolean success = super.reload();
-        // 尝试验证 JSON 是否能正确映射为 Templates（起校验作用）
-        try {
-            new Templates(contentCache);
-        } catch (Throwable e) {
-            success = false;
-        }
-        return success;
+        return super.reload();
     }
 
-    // 每次获取均返回新实例，避免 Templates.kt 内的 matchingTemplates 状态被多线程 Hook 并发污染
+    // 动态解析返回全新实例，彻底解决多线程/多进程读取污染的问题
     public Templates getTemplates() {
         return new Templates(read());
     }

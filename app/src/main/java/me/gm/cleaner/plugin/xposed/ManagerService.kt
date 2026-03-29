@@ -172,6 +172,7 @@ abstract class ManagerService : IManagerService.Stub() {
             isRunning = true
             thread(name = "CommandSocketServer") {
                 try {
+                    // 为 Socket 添加应用包名后缀，防止多个被注入的进程发生端口抢占冲突
                     val socketName = "me.gm.cleaner.command.${context.packageName}"
                     val serverSocket = LocalServerSocket(socketName)
                     XposedBridge.log("MPM_Socket: Command server listening on $socketName")
@@ -194,12 +195,23 @@ abstract class ManagerService : IManagerService.Stub() {
                         if (command != null) {
                             when (command.trim()) {
                                 "RELOAD_RULES" -> {
-                                    val success = ruleSp.reload()
-                                    writer.write(if (success) "SUCCESS\n" else "FAILED\n")
+                                    try {
+                                        // 借用 UI 写入方法机制：直接读取磁盘文件并投递，这会强制触发全部缓存更新操作
+                                        val content = ruleSp.file.readText()
+                                        writeSp(R.xml.template_preferences, content)
+                                        writer.write("SUCCESS\n")
+                                    } catch (e: Exception) {
+                                        writer.write("FAILED: ${e.message}\n")
+                                    }
                                 }
                                 "RELOAD_ROOT" -> {
-                                    val success = rootSp.reload()
-                                    writer.write(if (success) "SUCCESS\n" else "FAILED\n")
+                                    try {
+                                        val content = rootSp.file.readText()
+                                        writeSp(R.xml.root_preferences, content)
+                                        writer.write("SUCCESS\n")
+                                    } catch (e: Exception) {
+                                        writer.write("FAILED: ${e.message}\n")
+                                    }
                                 }
                                 else -> {
                                     writer.write("UNKNOWN_COMMAND\n")
@@ -225,6 +237,7 @@ abstract class ManagerService : IManagerService.Stub() {
             isRunning = true
             thread(name = "UsageRecordSocketServer") {
                 try {
+                    // 同样为使用记录的 Socket 绑定添加包名
                     val socketName = "me.gm.cleaner.usage_record.${context.packageName}"
                     val serverSocket = LocalServerSocket(socketName)
                     XposedBridge.log("MPM_Socket: UsageRecord server listening on $socketName")
