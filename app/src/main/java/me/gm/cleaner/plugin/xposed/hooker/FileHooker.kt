@@ -13,9 +13,7 @@ class FileHooker(
     private val hostPackageName: String
 ) : XC_MethodHook() {
     
-    // 路径标准化辅助函数
     private fun normalizePath(path: String): String {
-        // 将 /data/media/0 替换为标准 /storage/emulated/0 以便匹配规则
         if (path.startsWith("/data/media/0")) {
             return path.replaceFirst("/data/media/0", "/storage/emulated/0")
         }
@@ -25,7 +23,7 @@ class FileHooker(
     @Throws(Throwable::class)
     override fun beforeHookedMethod(param: MethodHookParam) {
         val file = param.thisObject as File
-        // 使用标准化路径进行匹配
+        
         val rawPath = file.absolutePath
         val path = normalizePath(rawPath)
         
@@ -39,24 +37,22 @@ class FileHooker(
             hostPackageName
         }
 
-        val templates = service.ruleSp.templates.values.filter { it.redirectRules?.isNotEmpty() == true }
+        // 获取并按优先级排序模板：特定应用在前，全局在后
+        val sortedTemplates = service.ruleSp.templates.values
+            .filter { it.redirectRules?.isNotEmpty() == true }
+            .sortedBy { if (it.applyToApp.isNullOrEmpty()) 1 else 0 }
         
-        for (template in templates) {
-            if (!template.applyToApp.isNullOrEmpty() && 
-                !template.applyToApp.contains(callingPackage) && 
-                uid != myUid 
-            ) {
+        for (template in sortedTemplates) {
+            val isGlobal = template.applyToApp.isNullOrEmpty()
+            // 如果既不是全局规则，又不在匹配名单中，并且非本进程操作，跳过
+            if (!isGlobal && !template.applyToApp!!.contains(callingPackage) && uid != myUid) {
                 continue
             }
             
             template.redirectRules?.forEach { rule ->
-                // 使用标准化后的 path 进行匹配
                 if (FileUtils.contains(rule.source, path)) {
-                    // 计算重定向路径
                     val redirectedPathStandard = path.replaceFirst(rule.source, rule.target)
                     
-                    // 如果原始路径是 /data/media/0，我们需要把重定向后的路径也还原回 /data/media/0 
-                    // 以便底层 Linux 系统调用能正确执行 (因为 ExternalStorageProvider 可能没有 /storage/ 挂载点的权限，只有底层权限)
                     val finalRedirectedPath = if (rawPath.startsWith("/data/media/0")) {
                         redirectedPathStandard.replaceFirst("/storage/emulated/0", "/data/media/0")
                     } else {

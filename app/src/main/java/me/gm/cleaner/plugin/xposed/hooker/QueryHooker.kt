@@ -43,7 +43,6 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
             return
         }
 
-        
         val query = Bundle(queryArgs)
         query.remove(INCLUDED_DEFAULT_DIRECTORIES)
         val honoredArgs = ArraySet<String>()
@@ -75,7 +74,6 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
         }
         val helper = XposedHelpers.callMethod(param.thisObject, "getDatabaseForUri", uri)
 
-        
         val qb = when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
                 val honoredArgsConsumer = object : Consumer<String> {
@@ -84,13 +82,11 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
                     }
                 }
                 try {
-                    
                     XposedHelpers.callMethod(
                         param.thisObject, "getQueryBuilder", TYPE_QUERY, table, uri, query,
                         honoredArgsConsumer, Optional.empty<Any>()
                     )
                 } catch (e: NoSuchMethodError) {
-                    
                     XposedHelpers.callMethod(
                         param.thisObject, "getQueryBuilder", TYPE_QUERY, table, uri, query,
                         honoredArgsConsumer
@@ -178,7 +174,8 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
         }
 
         val redirectionMap = mutableMapOf<String, String>()
-        templates.values.forEach { template ->
+        // 使用 reversed() 遍历，使得特定应用的规则最后被装入 map 中，从而实现优先级覆盖
+        templates.values.reversed().forEach { template ->
             template.redirectRules?.forEach { rule ->
                 redirectionMap[rule.target] = rule.source
             }
@@ -205,7 +202,6 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
             param.result = wrappedCursor
         }
 
-        
         try {
             if (service.rootSp.getBoolean("usage_record", true)) {
                 service.recordUsage(

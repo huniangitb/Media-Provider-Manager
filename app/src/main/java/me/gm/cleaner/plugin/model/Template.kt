@@ -17,10 +17,10 @@ data class Template(
     @field:SerializedName("hook_operation") val hookOperation: List<String>,
     @field:SerializedName("apply_to_app") val applyToApp: List<String>?,
     @field:SerializedName("permitted_media_types") val permittedMediaTypes: List<Int>?,
-    @field:SerializedName("filter_path") val filterPath: List<String>?, // 仅用于隐藏/拦截
-    @field:SerializedName("redirect_rules") val redirectRules: List<RedirectRule>? = null, // 新增：多重定向规则
+    @field:SerializedName("filter_path") val filterPath: List<String>?, 
+    @field:SerializedName("redirect_rules") val redirectRules: List<RedirectRule>? = null, 
     @Deprecated("Use redirectRules instead")
-    @field:SerializedName("redirect_path") val redirectPath: String? = null, //以此保持兼容性，但在逻辑中不再主要使用
+    @field:SerializedName("redirect_path") val redirectPath: String? = null, 
 )
 
 class Templates(json: String?) {
@@ -37,31 +37,29 @@ class Templates(json: String?) {
         }
     }
 
-    // 修改 Templates.kt 中的 filterTemplate 方法
-fun filterTemplate(cls: Class<*>, packageName: String): Templates {
-    matchingTemplates = _values.filter { template ->
-        val isOpMatch = when (cls) {
-            QueryHooker::class.java -> template.hookOperation.contains("query")
-            InsertHooker::class.java -> template.hookOperation.contains("insert")
-            else -> throw IllegalArgumentException()
+    fun filterTemplate(cls: Class<*>, packageName: String): Templates {
+        matchingTemplates = _values.filter { template ->
+            val isOpMatch = when (cls) {
+                QueryHooker::class.java -> template.hookOperation.contains("query")
+                InsertHooker::class.java -> template.hookOperation.contains("insert")
+                else -> throw IllegalArgumentException()
+            }
+            // applyToApp 为 null 或为空，则视为匹配所有应用（全局规则）
+            val isPackageMatch = template.applyToApp.isNullOrEmpty() || template.applyToApp.contains(packageName)
+            
+            isOpMatch && isPackageMatch
+        }.sortedBy { template ->
+            // 排序权重：特定应用规则排在前面 (0)，全局规则排在后面 (1)
+            if (template.applyToApp.isNullOrEmpty()) 1 else 0
         }
-        
-        // 如果 applyToApp 为 null 或为空，则视为匹配所有应用；否则检查包名是否在列表中
-        val isPackageMatch = template.applyToApp.isNullOrEmpty() || template.applyToApp.contains(packageName)
-        
-        isOpMatch && isPackageMatch
+        return this
     }
-    return this
-}
 
     fun applyTemplates(dataList: List<String>, mimeTypeList: List<String>): List<Boolean> =
         dataList.zip(mimeTypeList).map { (data, mimeType) ->
             (if (::matchingTemplates.isInitialized) matchingTemplates else _values)
                 .any { template ->
-                    // 检查是否在过滤列表中 (用于拦截/隐藏)
                     val isFiltered = template.filterPath?.any { FileUtils.contains(it, data) } == true
-                    
-                    // 检查媒体类型是否允许
                     val isMediaTypeNotPermitted = MimeUtils.resolveMediaType(mimeType) !in
                             (template.permittedMediaTypes ?: emptyList())
 

@@ -36,7 +36,6 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) param.args[5] else param.args[3]
                 ) as ContentValues
 
-        
         var mimeType = values.getAsString(MediaStore.MediaColumns.MIME_TYPE)
         val wasPathEmpty = wasPathEmpty(values)
         if (wasPathEmpty) {
@@ -46,16 +45,19 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
         val callingPackage = param.callingPackage
         val templates = service.ruleSp.templates.filterTemplate(javaClass, callingPackage)
 
-        
         var finalData = data
         var redirected = false
         
+        // 解析重定向规则：附带优先级标签
+        // minWithOrNull：先按 isGlobal 升序(false优先)，再按路径长度降序(越长越优先)
         val activeRule = templates.values
-            .flatMap { it.redirectRules ?: emptyList() }
-            .filter { rule -> 
-                data.startsWith(rule.source) 
+            .flatMap { template ->
+                val isGlobal = template.applyToApp.isNullOrEmpty()
+                template.redirectRules?.map { rule -> Pair(isGlobal, rule) } ?: emptyList()
             }
-            .maxByOrNull { it.source.length }
+            .filter { (_, rule) -> data.startsWith(rule.source) }
+            .minWithOrNull(compareBy({ it.first }, { -it.second.source.length }))
+            ?.second
 
         if (activeRule != null) {
             finalData = data.replaceFirst(activeRule.source, activeRule.target)
@@ -74,7 +76,6 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
             XposedBridge.log("MPM_Redirect_Insert: [$callingPackage] $data -> $finalData")
         }
 
-        
         var shouldIntercept = false
         if (!redirected) {
             shouldIntercept = templates.applyTemplates(listOf(data), listOf(mimeType)).first()
@@ -83,7 +84,6 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
             }
         }
 
-        
         if (mimeType.isNullOrEmpty()) {
             mimeType = values.getAsString(MediaStore.MediaColumns.MIME_TYPE)
             values.remove(MediaStore.MediaColumns.MIME_TYPE)
@@ -92,7 +92,6 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
             values.remove(MediaStore.MediaColumns.DATA)
         }
 
-        
         try {
             if (service.rootSp.getBoolean("usage_record", true)) {
                 service.recordUsage(
