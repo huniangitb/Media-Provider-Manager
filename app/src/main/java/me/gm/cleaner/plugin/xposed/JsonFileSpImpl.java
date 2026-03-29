@@ -78,7 +78,6 @@ public class JsonFileSpImpl extends SharedPreferencesWrapper {
     public synchronized boolean reload() {
         contentCache = readFromFile();
         JSONObject json;
-        boolean success = true;
         try {
             if (TextUtils.isEmpty(contentCache)) {
                 json = new JSONObject();
@@ -86,15 +85,12 @@ public class JsonFileSpImpl extends SharedPreferencesWrapper {
                 json = new JSONObject(contentCache);
             }
         } catch (Throwable e) {
+            // 忽略异常：对于 rules，它是 JSONArray "[...]"，所以会走到这里。
+            // 这是正常现象，我们提供空 JSONObject 保护 SP 逻辑不崩溃即可。
             json = new JSONObject();
-            success = false;
-            XposedBridge.log("MPM_Config: Failed to parse JSON in " + file.getName() + ": " + e.getMessage());
         }
         delegate = new JsonSharedPreferencesImpl(json);
-        if (success) {
-            XposedBridge.log("MPM_Config: " + file.getName() + " reloaded successfully.");
-        }
-        return success;
+        return contentCache != null;
     }
 
     public String read() {

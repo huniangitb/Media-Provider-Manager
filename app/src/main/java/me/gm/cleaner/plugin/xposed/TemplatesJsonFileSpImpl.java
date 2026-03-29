@@ -2,11 +2,9 @@ package me.gm.cleaner.plugin.xposed;
 
 import java.io.File;
 
-import de.robv.android.xposed.XposedBridge;
 import me.gm.cleaner.plugin.model.Templates;
 
 public final class TemplatesJsonFileSpImpl extends JsonFileSpImpl {
-    private volatile Templates templatesCache;
 
     public TemplatesJsonFileSpImpl(File src) {
         super(src);
@@ -15,25 +13,17 @@ public final class TemplatesJsonFileSpImpl extends JsonFileSpImpl {
     @Override
     public synchronized boolean reload() {
         boolean success = super.reload();
+        // 尝试验证 JSON 是否能正确映射为 Templates（起校验作用）
         try {
-            templatesCache = new Templates(contentCache);
+            new Templates(contentCache);
         } catch (Throwable e) {
             success = false;
-            XposedBridge.log("MPM_Config: Failed to parse Templates model: " + e.getMessage());
-        }
-        if (templatesCache == null) {
-            templatesCache = new Templates("");
         }
         return success;
     }
 
-    @Override
-    public void write(String what) {
-        super.write(what);
-        templatesCache = new Templates(what);
-    }
-
+    // 每次获取均返回新实例，避免 Templates.kt 内的 matchingTemplates 状态被多线程 Hook 并发污染
     public Templates getTemplates() {
-        return templatesCache;
+        return new Templates(read());
     }
 }
