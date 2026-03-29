@@ -1,4 +1,3 @@
-===== File: main/java/me/gm/cleaner/plugin/xposed/hooker/DeleteHooker.kt =====
 package me.gm.cleaner.plugin.xposed.hooker
 
 import android.app.RecoverableSecurityException
