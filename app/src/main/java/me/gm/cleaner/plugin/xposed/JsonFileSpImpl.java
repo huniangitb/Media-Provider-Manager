@@ -71,7 +71,6 @@ public class JsonFileSpImpl extends SharedPreferencesWrapper {
             it.getChannel().read(bb);
             return new String(bb.array());
         } catch (IOException e) {
-            XposedBridge.log(e);
             return "";
         }
     }
@@ -86,7 +85,7 @@ public class JsonFileSpImpl extends SharedPreferencesWrapper {
             } else {
                 json = new JSONObject(contentCache);
             }
-        } catch (JSONException e) {
+        } catch (Throwable e) {
             json = new JSONObject();
             success = false;
             XposedBridge.log("MPM_Config: Failed to parse JSON in " + file.getName() + ": " + e.getMessage());

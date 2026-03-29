@@ -7,7 +7,7 @@ import android.net.LocalServerSocket
 import android.net.LocalSocket
 import android.os.*
 import androidx.room.Room
-import com.google.gson.Gson
+import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import me.gm.cleaner.plugin.BuildConfig
 import me.gm.cleaner.plugin.IManagerService
@@ -18,8 +18,9 @@ import me.gm.cleaner.plugin.dao.MediaProviderRecordDao
 import me.gm.cleaner.plugin.dao.MediaProviderRecordDatabase
 import me.gm.cleaner.plugin.dao.MediaProviderRecord
 import me.gm.cleaner.plugin.model.ParceledListSlice
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
-import java.io.IOException
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
 
@@ -42,15 +43,19 @@ abstract class ManagerService : IManagerService.Stub() {
 
     protected fun onCreate(context: Context) {
         this.context = context
-        database = Room
-            .databaseBuilder(
-                context,
-                MediaProviderRecordDatabase::class.java,
-                MEDIA_PROVIDER_USAGE_RECORD_DATABASE_NAME
-            )
-            .addMigrations(MIGRATION_1_2)
-            .build()
-        dao = database.mediaProviderRecordDao()
+        try {
+            database = Room
+                .databaseBuilder(
+                    context,
+                    MediaProviderRecordDatabase::class.java,
+                    MEDIA_PROVIDER_USAGE_RECORD_DATABASE_NAME
+                )
+                .addMigrations(MIGRATION_1_2)
+                .build()
+            dao = database.mediaProviderRecordDao()
+        } catch (e: Throwable) {
+            XposedBridge.log("MPM_DB: Failed to init Room database: ${e.message}")
+        }
 
         usageRecordSocketServer = UsageRecordSocketServer()
         usageRecordSocketServer.start()
@@ -60,8 +65,19 @@ abstract class ManagerService : IManagerService.Stub() {
     }
 
     fun recordUsage(record: MediaProviderRecord) {
-        dao.insert(record)
-        usageRecordSocketServer.broadcast(record)
+        try {
+            if (::dao.isInitialized) {
+                dao.insert(record)
+            }
+        } catch (e: Throwable) {
+            XposedBridge.log("MPM_DB: dao.insert failed: ${e.message}")
+        }
+        
+        try {
+            usageRecordSocketServer.broadcast(record)
+        } catch (e: Throwable) {
+            XposedBridge.log("MPM_Socket: broadcast failed: ${e.message}")
+        }
     }
 
     private val packageManagerService: IInterface by lazy {
@@ -112,11 +128,13 @@ abstract class ManagerService : IManagerService.Stub() {
     }
 
     override fun clearAllTables() {
-        database.clearAllTables()
+        if (::database.isInitialized) {
+            database.clearAllTables()
+        }
     }
 
     override fun packageUsageTimes(operation: Int, packageNames: List<String>) =
-        dao.packageUsageTimes(operation, *packageNames.toTypedArray())
+        if (::dao.isInitialized) dao.packageUsageTimes(operation, *packageNames.toTypedArray()) else 0
 
     override fun registerMediaChangeObserver(observer: IMediaChangeObserver) {
         observers.register(observer)
@@ -128,18 +146,22 @@ abstract class ManagerService : IManagerService.Stub() {
 
     @Synchronized
     fun dispatchMediaChange() {
-        var i = observers.beginBroadcast()
-        while (i > 0) {
-            i--
-            val observer = observers.getBroadcastItem(i)
-            if (observer != null) {
-                try {
-                    observer.onChange()
-                } catch (ignored: RemoteException) {
+        try {
+            var i = observers.beginBroadcast()
+            while (i > 0) {
+                i--
+                val observer = observers.getBroadcastItem(i)
+                if (observer != null) {
+                    try {
+                        observer.onChange()
+                    } catch (ignored: RemoteException) {
+                    }
                 }
             }
+            observers.finishBroadcast()
+        } catch (e: Throwable) {
+            XposedBridge.log("MPM_Observer: dispatchMediaChange failed: ${e.message}")
         }
-        observers.finishBroadcast()
     }
 
     inner class CommandSocketServer {
@@ -155,8 +177,8 @@ abstract class ManagerService : IManagerService.Stub() {
                         val client = serverSocket.accept()
                         thread { handleClient(client) }
                     }
-                } catch (e: IOException) {
-                    e.printStackTrace()
+                } catch (e: Throwable) {
+                    XposedBridge.log("MPM_Socket: CommandSocketServer failed: ${e.message}")
                 }
             }
         }
@@ -184,8 +206,7 @@ abstract class ManagerService : IManagerService.Stub() {
                         }
                     }
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } catch (e: Throwable) {
             } finally {
                 try { client.close() } catch (ignored: Exception) {}
             }
@@ -194,7 +215,6 @@ abstract class ManagerService : IManagerService.Stub() {
 
     inner class UsageRecordSocketServer {
         private val clients = CopyOnWriteArrayList<LocalSocket>()
-        private val gson = Gson()
         private var isRunning = false
 
         fun start() {
@@ -207,31 +227,33 @@ abstract class ManagerService : IManagerService.Stub() {
                         val client = serverSocket.accept()
                         clients.add(client)
                     }
-                } catch (e: IOException) {
-                    e.printStackTrace()
+                } catch (e: Throwable) {
+                    XposedBridge.log("MPM_Socket: UsageRecordSocketServer failed: ${e.message}")
                 }
             }
         }
 
         fun broadcast(record: MediaProviderRecord) {
             if (clients.isEmpty()) return
-            val recordMap = mapOf(
-                "timeMillis" to record.timeMillis,
-                "packageName" to record.packageName,
-                "match" to record.match,
-                "operation" to record.operation,
-                "data" to record.data,
-                "mimeType" to record.mimeType,
-                "intercepted" to record.intercepted
-            )
-            val json = gson.toJson(recordMap) + "\n"
-            val bytes = json.toByteArray()
+            
+            val jsonObject = JSONObject().apply {
+                put("timeMillis", record.timeMillis)
+                put("packageName", record.packageName)
+                put("match", record.match)
+                put("operation", record.operation)
+                put("data", JSONArray(record.data))
+                put("mimeType", JSONArray(record.mimeType))
+                put("intercepted", JSONArray(record.intercepted))
+            }
+            val jsonStr = jsonObject.toString() + "\n"
+            val bytes = jsonStr.toByteArray()
+            
             val iterator = clients.iterator()
             for (client in iterator) {
                 try {
                     client.outputStream.write(bytes)
                     client.outputStream.flush()
-                } catch (e: IOException) {
+                } catch (e: Exception) {
                     clients.remove(client)
                     try { client.close() } catch (ignored: Exception) {}
                 }

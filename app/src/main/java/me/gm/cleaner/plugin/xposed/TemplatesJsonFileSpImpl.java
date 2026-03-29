@@ -15,13 +15,14 @@ public final class TemplatesJsonFileSpImpl extends JsonFileSpImpl {
     @Override
     public synchronized boolean reload() {
         boolean success = super.reload();
-        if (success) {
-            try {
-                templatesCache = new Templates(contentCache);
-            } catch (Exception e) {
-                success = false;
-                XposedBridge.log("MPM_Config: Failed to parse Templates model: " + e.getMessage());
-            }
+        try {
+            templatesCache = new Templates(contentCache);
+        } catch (Throwable e) {
+            success = false;
+            XposedBridge.log("MPM_Config: Failed to parse Templates model: " + e.getMessage());
+        }
+        if (templatesCache == null) {
+            templatesCache = new Templates("");
         }
         return success;
     }

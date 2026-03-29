@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore.Files.FileColumns
 import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import me.gm.cleaner.plugin.R
 import me.gm.cleaner.plugin.dao.MediaProviderOperation.Companion.OP_DELETE
@@ -122,25 +123,24 @@ class DeleteHooker(private val service: ManagerService) : XC_MethodHook(), Media
         }
 
         
-
-        
-        if (service.rootSp.getBoolean(
-                service.resources.getString(R.string.usage_record_key), true
-            )
-        ) {
-            service.recordUsage(
-                MediaProviderRecord(
-                    0,
-                    System.currentTimeMillis(),
-                    param.callingPackage,
-                    match,
-                    OP_DELETE,
-                    data,
-                    mimeType,
-                    MutableList(data.size) { false }
+        try {
+            if (service.rootSp.getBoolean("usage_record", true)) {
+                service.recordUsage(
+                    MediaProviderRecord(
+                        0,
+                        System.currentTimeMillis(),
+                        param.callingPackage,
+                        match,
+                        OP_DELETE,
+                        data,
+                        mimeType,
+                        MutableList(data.size) { false }
+                    )
                 )
-            )
-            service.dispatchMediaChange()
+                service.dispatchMediaChange()
+            }
+        } catch (e: Throwable) {
+            XposedBridge.log("MPM_Hook: Failed to record delete usage: ${e.message}")
         }
     }
 

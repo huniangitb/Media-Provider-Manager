@@ -13,6 +13,7 @@ import android.provider.MediaStore.Files.FileColumns
 import android.util.ArraySet
 import androidx.core.os.bundleOf
 import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import me.gm.cleaner.plugin.BuildConfig
 import me.gm.cleaner.plugin.R
@@ -178,14 +179,9 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
 
         val redirectionMap = mutableMapOf<String, String>()
         templates.values.forEach { template ->
-            
             template.redirectRules?.forEach { rule ->
-                
-                
                 redirectionMap[rule.target] = rule.source
             }
-            
-            
             if (!template.redirectPath.isNullOrEmpty() && !template.filterPath.isNullOrEmpty()) {
                  template.filterPath.forEach { originalPath ->
                     redirectionMap[template.redirectPath] = originalPath
@@ -210,23 +206,24 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
         }
 
         
-        if (service.rootSp.getBoolean(
-                service.resources.getString(R.string.usage_record_key), true
-            )
-        ) {
-            service.recordUsage(
-                MediaProviderRecord(
-                    0,
-                    System.currentTimeMillis(),
-                    callingPackage,
-                    table,
-                    OP_QUERY,
-                    if (dataList.size < MAX_SIZE) dataList else dataList.subList(0, MAX_SIZE),
-                    mimeTypeList,
-                    shouldIntercept
+        try {
+            if (service.rootSp.getBoolean("usage_record", true)) {
+                service.recordUsage(
+                    MediaProviderRecord(
+                        0,
+                        System.currentTimeMillis(),
+                        callingPackage,
+                        table,
+                        OP_QUERY,
+                        if (dataList.size < MAX_SIZE) dataList else dataList.subList(0, MAX_SIZE),
+                        mimeTypeList,
+                        shouldIntercept
+                    )
                 )
-            )
-            service.dispatchMediaChange()
+                service.dispatchMediaChange()
+            }
+        } catch (e: Throwable) {
+            XposedBridge.log("MPM_Hook: Failed to record query usage: ${e.message}")
         }
     }
 

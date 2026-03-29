@@ -50,7 +50,6 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
         var finalData = data
         var redirected = false
         
-        
         val activeRule = templates.values
             .flatMap { it.redirectRules ?: emptyList() }
             .filter { rule -> 
@@ -61,7 +60,6 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
         if (activeRule != null) {
             finalData = data.replaceFirst(activeRule.source, activeRule.target)
             values.put(MediaStore.MediaColumns.DATA, finalData)
-            
             
             val externalPath = Environment.getExternalStorageDirectory().path
             if (finalData.startsWith(externalPath)) {
@@ -95,23 +93,24 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
         }
 
         
-        if (service.rootSp.getBoolean(
-                service.resources.getString(R.string.usage_record_key), true
-            )
-        ) {
-            service.recordUsage(
-                MediaProviderRecord(
-                    0,
-                    System.currentTimeMillis(),
-                    callingPackage,
-                    match,
-                    OP_INSERT,
-                    listOf(finalData),
-                    listOf(mimeType ?: ""),
-                    listOf(shouldIntercept)
+        try {
+            if (service.rootSp.getBoolean("usage_record", true)) {
+                service.recordUsage(
+                    MediaProviderRecord(
+                        0,
+                        System.currentTimeMillis(),
+                        callingPackage,
+                        match,
+                        OP_INSERT,
+                        listOf(finalData),
+                        listOf(mimeType ?: ""),
+                        listOf(shouldIntercept)
+                    )
                 )
-            )
-            service.dispatchMediaChange()
+                service.dispatchMediaChange()
+            }
+        } catch (e: Throwable) {
+            XposedBridge.log("MPM_Hook: Failed to record insert usage: ${e.message}")
         }
     }
 
