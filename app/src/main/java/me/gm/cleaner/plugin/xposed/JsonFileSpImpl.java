@@ -33,7 +33,7 @@ public class JsonFileSpImpl extends SharedPreferencesWrapper {
 
         reload();
 
-        int mask = FileObserver.MODIFY | FileObserver.CREATE | FileObserver.CLOSE_WRITE | FileObserver.MOVED_TO;
+        int mask = FileObserver.MODIFY | FileObserver.CREATE | FileObserver.CLOSE_WRITE | FileObserver.MOVED_TO | FileObserver.DELETE;
         mFileObserver = new FileObserver(src.getParent(), mask) {
             @Override
             public void onEvent(int event, String path) {

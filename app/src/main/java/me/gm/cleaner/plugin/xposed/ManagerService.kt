@@ -172,13 +172,16 @@ abstract class ManagerService : IManagerService.Stub() {
             isRunning = true
             thread(name = "CommandSocketServer") {
                 try {
-                    val serverSocket = LocalServerSocket("me.gm.cleaner.command")
+                    val socketName = "me.gm.cleaner.command.${context.packageName}"
+                    val serverSocket = LocalServerSocket(socketName)
+                    XposedBridge.log("MPM_Socket: Command server listening on $socketName")
                     while (isRunning) {
                         val client = serverSocket.accept()
                         thread { handleClient(client) }
                     }
                 } catch (e: Throwable) {
-                    XposedBridge.log("MPM_Socket: CommandSocketServer failed: ${e.message}")
+                    XposedBridge.log("MPM_Socket: CommandSocketServer failed on ${context.packageName}: ${e.message}")
+                    isRunning = false
                 }
             }
         }
@@ -222,13 +225,16 @@ abstract class ManagerService : IManagerService.Stub() {
             isRunning = true
             thread(name = "UsageRecordSocketServer") {
                 try {
-                    val serverSocket = LocalServerSocket("me.gm.cleaner.usage_record")
+                    val socketName = "me.gm.cleaner.usage_record.${context.packageName}"
+                    val serverSocket = LocalServerSocket(socketName)
+                    XposedBridge.log("MPM_Socket: UsageRecord server listening on $socketName")
                     while (isRunning) {
                         val client = serverSocket.accept()
                         clients.add(client)
                     }
                 } catch (e: Throwable) {
-                    XposedBridge.log("MPM_Socket: UsageRecordSocketServer failed: ${e.message}")
+                    XposedBridge.log("MPM_Socket: UsageRecordSocketServer failed on ${context.packageName}: ${e.message}")
+                    isRunning = false
                 }
             }
         }
