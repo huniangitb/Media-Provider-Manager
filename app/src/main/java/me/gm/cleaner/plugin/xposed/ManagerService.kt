@@ -1,26 +1,13 @@
-/*
- * Copyright 2021 Green Mushroom
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package me.gm.cleaner.plugin.xposed
 
 import android.content.Context
 import android.content.pm.PackageInfo
 import android.content.res.Resources
+import android.net.LocalServerSocket
+import android.net.LocalSocket
 import android.os.*
 import androidx.room.Room
+import com.google.gson.Gson
 import de.robv.android.xposed.XposedHelpers
 import me.gm.cleaner.plugin.BuildConfig
 import me.gm.cleaner.plugin.IManagerService
@@ -29,8 +16,12 @@ import me.gm.cleaner.plugin.R
 import me.gm.cleaner.plugin.dao.MIGRATION_1_2
 import me.gm.cleaner.plugin.dao.MediaProviderRecordDao
 import me.gm.cleaner.plugin.dao.MediaProviderRecordDatabase
+import me.gm.cleaner.plugin.dao.MediaProviderRecord
 import me.gm.cleaner.plugin.model.ParceledListSlice
 import java.io.File
+import java.io.IOException
+import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.concurrent.thread
 
 abstract class ManagerService : IManagerService.Stub() {
     lateinit var classLoader: ClassLoader
@@ -45,6 +36,8 @@ abstract class ManagerService : IManagerService.Stub() {
     private val observers = RemoteCallbackList<IMediaChangeObserver>()
     val rootSp by lazy { JsonFileSpImpl(File(context.filesDir, "root")) }
     val ruleSp by lazy { TemplatesJsonFileSpImpl(File(context.filesDir, "rule")) }
+    
+    private val socketServer by lazy { UsageRecordSocketServer() }
 
     protected fun onCreate(context: Context) {
         this.context = context
@@ -57,6 +50,13 @@ abstract class ManagerService : IManagerService.Stub() {
             .addMigrations(MIGRATION_1_2)
             .build()
         dao = database.mediaProviderRecordDao()
+
+        socketServer.start()
+    }
+
+    fun recordUsage(record: MediaProviderRecord) {
+        dao.insert(record)
+        socketServer.broadcast(record)
     }
 
     private val packageManagerService: IInterface by lazy {
@@ -135,6 +135,53 @@ abstract class ManagerService : IManagerService.Stub() {
             }
         }
         observers.finishBroadcast()
+    }
+
+    inner class UsageRecordSocketServer {
+        private val clients = CopyOnWriteArrayList<LocalSocket>()
+        private val gson = Gson()
+        private var isRunning = false
+
+        fun start() {
+            if (isRunning) return
+            isRunning = true
+            thread(name = "UsageRecordSocketServer") {
+                try {
+                    val serverSocket = LocalServerSocket("me.gm.cleaner.usage_record")
+                    while (isRunning) {
+                        val client = serverSocket.accept()
+                        clients.add(client)
+                    }
+                } catch (e: IOException) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
+        fun broadcast(record: MediaProviderRecord) {
+            if (clients.isEmpty()) return
+            val recordMap = mapOf(
+                "timeMillis" to record.timeMillis,
+                "packageName" to record.packageName,
+                "match" to record.match,
+                "operation" to record.operation,
+                "data" to record.data,
+                "mimeType" to record.mimeType,
+                "intercepted" to record.intercepted
+            )
+            val json = gson.toJson(recordMap) + "\n"
+            val bytes = json.toByteArray()
+            val iterator = clients.iterator()
+            for (client in iterator) {
+                try {
+                    client.outputStream.write(bytes)
+                    client.outputStream.flush()
+                } catch (e: IOException) {
+                    clients.remove(client)
+                    try { client.close() } catch (ignored: Exception) {}
+                }
+            }
+        }
     }
 
     companion object {

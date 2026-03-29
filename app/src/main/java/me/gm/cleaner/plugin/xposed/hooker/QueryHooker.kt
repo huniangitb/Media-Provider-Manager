@@ -30,7 +30,7 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
         if (param.isFuseThread) {
             return
         }
-        /** ARGUMENTS */
+        
         val uri = param.args[0] as Uri
         val projection = param.args[1] as? Array<String>?
         val queryArgs = param.args[2] as? Bundle ?: Bundle.EMPTY
@@ -42,7 +42,7 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
             return
         }
 
-        /** PARSE */
+        
         val query = Bundle(queryArgs)
         query.remove(INCLUDED_DEFAULT_DIRECTORIES)
         val honoredArgs = ArraySet<String>()
@@ -74,7 +74,7 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
         }
         val helper = XposedHelpers.callMethod(param.thisObject, "getDatabaseForUri", uri)
 
-        /** 适配 getQueryBuilder 的不同版本签名 */
+        
         val qb = when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
                 val honoredArgsConsumer = object : Consumer<String> {
@@ -83,13 +83,13 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
                     }
                 }
                 try {
-                    // 尝试 6 参数版本 (部分 Android 11+ / OEM)
+                    
                     XposedHelpers.callMethod(
                         param.thisObject, "getQueryBuilder", TYPE_QUERY, table, uri, query,
                         honoredArgsConsumer, Optional.empty<Any>()
                     )
                 } catch (e: NoSuchMethodError) {
-                    // 回退到 5 参数版本 (标准 Android 11/12)
+                    
                     XposedHelpers.callMethod(
                         param.thisObject, "getQueryBuilder", TYPE_QUERY, table, uri, query,
                         honoredArgsConsumer
@@ -178,14 +178,14 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
 
         val redirectionMap = mutableMapOf<String, String>()
         templates.values.forEach { template ->
-            // 新逻辑：处理 redirectRules
+            
             template.redirectRules?.forEach { rule ->
-                // 重定向逻辑：Key是重定向后的路径(真实存在的路径)，Value是原始路径(App看到的路径)
-                // 在 Query 钩子中，我们需要把数据库里真实的路径 (Target) 伪装回 App 认为的路径 (Source)
+                
+                
                 redirectionMap[rule.target] = rule.source
             }
             
-            // 兼容旧逻辑 (可选)
+            
             if (!template.redirectPath.isNullOrEmpty() && !template.filterPath.isNullOrEmpty()) {
                  template.filterPath.forEach { originalPath ->
                     redirectionMap[template.redirectPath] = originalPath
@@ -209,12 +209,12 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
             param.result = wrappedCursor
         }
 
-        /** RECORD */
+        
         if (service.rootSp.getBoolean(
                 service.resources.getString(R.string.usage_record_key), true
             )
         ) {
-            service.dao.insert(
+            service.recordUsage(
                 MediaProviderRecord(
                     0,
                     System.currentTimeMillis(),

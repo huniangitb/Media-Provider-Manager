@@ -1,21 +1,8 @@
-/*
- * Copyright 2021 Green Mushroom
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package me.gm.cleaner.plugin.xposed;
 
+import android.os.FileObserver;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.TextUtils;
 
 import org.json.JSONException;
@@ -34,23 +21,25 @@ import me.gm.cleaner.plugin.dao.SharedPreferencesWrapper;
 public class JsonFileSpImpl extends SharedPreferencesWrapper {
     public final File file;
     protected String contentCache;
+    private FileObserver mFileObserver;
+    private final Handler mHandler = new Handler(Looper.getMainLooper());
+    private final Runnable mReloadRunnable = this::reload;
 
     public JsonFileSpImpl(File src) {
         file = src;
 
-        JSONObject json;
-        try {
-            var str = read();
-            if (TextUtils.isEmpty(str)) {
-                // don't throw an exception in this case.
-                json = new JSONObject();
-            } else {
-                json = new JSONObject(str);
+        reload();
+
+        mFileObserver = new FileObserver(src.getParent(), FileObserver.MODIFY | FileObserver.CREATE) {
+            @Override
+            public void onEvent(int event, String path) {
+                if (path != null && path.equals(file.getName())) {
+                    mHandler.removeCallbacks(mReloadRunnable);
+                    mHandler.postDelayed(mReloadRunnable, 1000);
+                }
             }
-        } catch (JSONException e) {
-            json = new JSONObject();
-        }
-        delegate = new JsonSharedPreferencesImpl(json);
+        };
+        mFileObserver.startWatching();
     }
 
     private void ensureFile() {
@@ -64,16 +53,36 @@ public class JsonFileSpImpl extends SharedPreferencesWrapper {
         }
     }
 
+    private String readFromFile() {
+        ensureFile();
+        try (var it = new FileInputStream(file)) {
+            var bb = ByteBuffer.allocate(it.available());
+            it.getChannel().read(bb);
+            return new String(bb.array());
+        } catch (IOException e) {
+            XposedBridge.log(e);
+            return "";
+        }
+    }
+
+    protected void reload() {
+        contentCache = readFromFile();
+        JSONObject json;
+        try {
+            if (TextUtils.isEmpty(contentCache)) {
+                json = new JSONObject();
+            } else {
+                json = new JSONObject(contentCache);
+            }
+        } catch (JSONException e) {
+            json = new JSONObject();
+        }
+        delegate = new JsonSharedPreferencesImpl(json);
+    }
+
     public String read() {
         if (contentCache == null) {
-            ensureFile();
-            try (var it = new FileInputStream(file)) {
-                var bb = ByteBuffer.allocate(it.available());
-                it.getChannel().read(bb);
-                contentCache = new String(bb.array());
-            } catch (IOException e) {
-                XposedBridge.log(e);
-            }
+            contentCache = readFromFile();
         }
         return contentCache;
     }

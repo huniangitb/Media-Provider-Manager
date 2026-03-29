@@ -1,19 +1,4 @@
-/*
- * Copyright 2021 Green Mushroom
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+===== File: main/java/me/gm/cleaner/plugin/xposed/hooker/DeleteHooker.kt =====
 package me.gm.cleaner.plugin.xposed.hooker
 
 import android.app.RecoverableSecurityException
@@ -39,7 +24,7 @@ class DeleteHooker(private val service: ManagerService) : XC_MethodHook(), Media
         if (param.isFuseThread) {
             return
         }
-        /** ARGUMENTS */
+        
         val uri = param.args[0] as Uri
         val extras = param.args[1] as? Bundle ?: Bundle.EMPTY
         val userWhere: String? = when {
@@ -59,7 +44,7 @@ class DeleteHooker(private val service: ManagerService) : XC_MethodHook(), Media
             else -> throw UnsupportedOperationException()
         }
 
-        /** PARSE */
+        
         val match = param.matchUri(uri, param.isCallingPackageAllowedHidden)
         val data = mutableListOf<String>()
         val mimeType = mutableListOf<String>()
@@ -77,8 +62,8 @@ class DeleteHooker(private val service: ManagerService) : XC_MethodHook(), Media
                     }
                 } catch (e: XposedHelpers.InvocationTargetError) {
                     if (e.cause is RecoverableSecurityException) {
-                        // Give callers interacting with a specific media item a chance to
-                        // escalate access if they don't already have it
+                        
+                        
                         return
                     }
                 }
@@ -118,7 +103,7 @@ class DeleteHooker(private val service: ManagerService) : XC_MethodHook(), Media
                     else -> throw UnsupportedOperationException()
                 } as Cursor
                 if (c.count == 0) {
-                    // deleting nothing.
+                    
                     c.close()
                     return
                 }
@@ -134,17 +119,17 @@ class DeleteHooker(private val service: ManagerService) : XC_MethodHook(), Media
                 data.mapTo(mimeType) { MimeUtils.resolveMimeType(File(it)) }
             }
 
-            else -> return // We don't care about these data, just ignore.
+            else -> return 
         }
 
-        // There is a system confirm dialog before deletion, thus we don't intercept delete operation.
+        
 
-        /** RECORD */
+        
         if (service.rootSp.getBoolean(
                 service.resources.getString(R.string.usage_record_key), true
             )
         ) {
-            service.dao.insert(
+            service.recordUsage(
                 MediaProviderRecord(
                     0,
                     System.currentTimeMillis(),

@@ -25,7 +25,7 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
         if (param.isFuseThread) {
             return
         }
-        /** ARGUMENTS */
+        
         val match = (
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) param.args[2] else param.args[1]
                 ) as Int
@@ -36,7 +36,7 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) param.args[5] else param.args[3]
                 ) as ContentValues
 
-        /** PARSE */
+        
         var mimeType = values.getAsString(MediaStore.MediaColumns.MIME_TYPE)
         val wasPathEmpty = wasPathEmpty(values)
         if (wasPathEmpty) {
@@ -46,11 +46,11 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
         val callingPackage = param.callingPackage
         val templates = service.ruleSp.templates.filterTemplate(javaClass, callingPackage)
 
-        /** REDIRECT LOGIC (使用 redirectRules) */
+        
         var finalData = data
         var redirected = false
         
-        // 查找匹配的重定向规则，优先匹配最长的 source 路径
+        
         val activeRule = templates.values
             .flatMap { it.redirectRules ?: emptyList() }
             .filter { rule -> 
@@ -62,7 +62,7 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
             finalData = data.replaceFirst(activeRule.source, activeRule.target)
             values.put(MediaStore.MediaColumns.DATA, finalData)
             
-            // 处理 RELATIVE_PATH，防止产生空文件夹
+            
             val externalPath = Environment.getExternalStorageDirectory().path
             if (finalData.startsWith(externalPath)) {
                 val newFile = File(finalData)
@@ -76,7 +76,7 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
             XposedBridge.log("MPM_Redirect_Insert: [$callingPackage] $data -> $finalData")
         }
 
-        /** INTERCEPT LOGIC (使用 filterPath 和 mimeType) */
+        
         var shouldIntercept = false
         if (!redirected) {
             shouldIntercept = templates.applyTemplates(listOf(data), listOf(mimeType)).first()
@@ -85,7 +85,7 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
             }
         }
 
-        // 兼容性清理
+        
         if (mimeType.isNullOrEmpty()) {
             mimeType = values.getAsString(MediaStore.MediaColumns.MIME_TYPE)
             values.remove(MediaStore.MediaColumns.MIME_TYPE)
@@ -94,12 +94,12 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
             values.remove(MediaStore.MediaColumns.DATA)
         }
 
-        /** RECORD */
+        
         if (service.rootSp.getBoolean(
                 service.resources.getString(R.string.usage_record_key), true
             )
         ) {
-            service.dao.insert(
+            service.recordUsage(
                 MediaProviderRecord(
                     0,
                     System.currentTimeMillis(),
