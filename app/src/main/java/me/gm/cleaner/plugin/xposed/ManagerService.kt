@@ -32,12 +32,15 @@ abstract class ManagerService : IManagerService.Stub() {
     lateinit var context: Context
         private set
 
-    // 获取进程单例实例，确保永远不会返回空对象导致 NPE
+    // 重新公开属性，确保 Hooker 能够访问
     val rootSp: JsonFileSpImpl
         get() = sRootSp ?: JsonFileSpImpl(File("/dev/null"))
 
     val ruleSp: TemplatesJsonFileSpImpl
         get() = sRuleSp ?: TemplatesJsonFileSpImpl(File("/dev/null"))
+
+    val dao: MediaProviderRecordDao?
+        get() = sDao
 
     protected fun onCreate(context: Context) {
         this.context = context
