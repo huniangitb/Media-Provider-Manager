@@ -209,12 +209,15 @@ class CreateTemplateFragment : AbsSettingsFragment() {
             findPreference<MultiSelectListPreference>(getString(R.string.hook_operation_key))?.values
         val redirectRules = findPreference<RedirectRuleListPreference>(getString(R.string.redirect_rules_key))?.rules
         val filterPaths = findPreference<PathListPreference>(getString(R.string.filter_path_key))?.values?.toList()
+        val readOnlyPaths = findPreference<PathListPreference>(getString(R.string.read_only_path_key))?.values?.toList()
+        
         if (!templateName.isNullOrEmpty() && hookOperationValues?.isNotEmpty() == true) {
             val baseTemplate = Gson().fromJson(tempSp.delegate.toString(), Template::class.java)
             val newTemplate = baseTemplate.copy(
                 templateName = templateName,
                 hookOperation = hookOperationValues.toList(),
                 filterPath = filterPaths,
+                readOnlyPath = readOnlyPaths,
                 redirectRules = redirectRules,
                 redirectPath = null
             )

@@ -3,7 +3,7 @@
     <string name="app_name">Media Provider Manager</string>
     <string name="description">An Xposed module intended to prevent media storage abuse.</string>
 
-    <!-- Drawer -->
+    
     <string name="start_destination_key" translatable="false">start_destination</string>
     <string name="module">Module</string>
     <string name="app_management">App Management</string>
@@ -18,7 +18,7 @@
     <string name="playground">Playground</string>
     <string name="about">About</string>
 
-    <!-- Module -->
+    
     <string name="guide_active">Activate the module in the Xposed framework and restart the system to use this feature.</string>
     <string name="not_active">NOT ACTIVE</string>
     <string name="restart_system">Restart the system to upgrade the module</string>
@@ -37,7 +37,7 @@
     <string name="add_to_existing_template_title">Add to existing template: %s</string>
     <string name="remove_from_template">Remove this app from the template</string>
 
-    <!-- Menu -->
+    
     <string name="search">Search</string>
     <string name="view">View</string>
     <string name="sort_key" translatable="false">sort</string>
@@ -72,7 +72,7 @@
     <string name="span_count_key" translatable="false">span_count</string>
     <string name="playback_speed_key" translatable="false">playback_speed</string>
 
-    <!-- Settings -->
+    
     <string name="global_header">GLOBAL</string>
     <string name="reject_nonstandard_dir_key" translatable="false">reject_nonstandard_dir</string>
     <string name="reject_nonstandard_dir_title">Reject creating non-standard directory</string>
@@ -90,7 +90,7 @@
     <string name="template_name_title">Template name</string>
     <string name="template_name_not_unique">The template name is not unique.</string>
     <string name="path_config_title">Path Configuration</string>
-    <!-- [Redirection Section - 改动部分] -->
+    
     <string name="redirect_rules_key" translatable="false">redirect_rules</string>
     <string name="redirect_rules_title">Redirection rules</string>
     <string name="redirect_rules_dialog_title">Edit redirections</string>
@@ -99,15 +99,17 @@
     <string name="edit_redirect_rule">Edit redirection rule</string>
     <string name="source_path_title">Source path (Original)</string>
     <string name="target_path_title">Target path (Redirect to)</string>
-    <string name="source_path_hint">e.g. /storage/emulated/0/Tencent/QQ</string>
+    <string name="source_path_hint">e.g. /storage/emulated/0/Tencent/QQ/</string>
     <string name="target_path_hint">Actual location to store files</string>
     
-    <!-- 保持兼容，标记为废弃或仅供参考 -->
     <string name="redirect_path_key" translatable="false">redirect_path</string>
     <string name="redirect_path_title">Redirect to (Legacy)</string>
     <string name="redirect_path_summary">Files will be actually stored in this directory</string>
 
-    <!-- [Filtering Section] -->
+    <string name="read_only_path_key" translatable="false">read_only_path</string>
+    <string name="read_only_path_title">Read-only paths (Block writes)</string>
+    <string name="read_only_path_dialog_title">Edit read-only paths</string>
+
     <string name="filter_path_key" translatable="false">filter_path</string>
     <string name="filter_path_title">Filter path (Block/Hide)</string>
     <string name="filter_path_dialog_title">Edit filter paths</string>
@@ -132,7 +134,7 @@
     <string name="not_set">Not set</string>
     <string name="quit_without_save">Changes aren\'t saved yet, are you sure you want to quit?</string>
 
-    <!-- Media Store -->
+    
     <string name="today">Today</string>
     <string name="yesterday">Yesterday</string>
     <string name="rationale_shouldShowRationale">App needs read external storage permission to visit media files created by other apps.</string>
@@ -142,7 +144,7 @@
         Please revoke the permission in app info manually.</string>
     <string name="unsupported_delete_in_bulk">Delete in bulk through the media store is not possible on Android Q.</string>
 
-    <!-- Playground -->
+    
     <string name="playground_header">Here are some experiments on media storage,
         through which you can learn about media storage and test module functions.</string>
     <string name="no_wifi">No wifi transport yet. Would you like to start the experiment which will consume your data?</string>

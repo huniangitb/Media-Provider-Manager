@@ -3,7 +3,7 @@
     <string name="app_name">媒體儲存空間管理</string>
     <string name="description">防止媒體儲存濫用</string>
 
-    <!-- 側欄 -->
+    
     <string name="module">模組</string>
     <string name="app_management">應用管理</string>
     <string name="usage_record">使用記錄</string>
@@ -17,7 +17,7 @@
     <string name="playground">實驗</string>
     <string name="about">關於</string>
 
-    <!-- 模組 -->
+    
     <string name="guide_active">在 Xposed 框架中啟動模組並重啟系統才能使用此功能</string>
     <string name="not_active">未啟動</string>
     <string name="restart_system">重啟系統以升級模組</string>
@@ -36,7 +36,7 @@
     <string name="add_to_existing_template_title">添加到已有模板：%s</string>
     <string name="remove_from_template">從模板中移除此應用</string>
 
-    <!-- 菜單 -->
+    
     <string name="search">搜尋</string>
     <string name="view">檢視</string>
     <string name="sort_title">排序方式</string>
@@ -62,7 +62,7 @@
     <string name="menu_sort_by_size_title">大小</string>
     <string name="scan_external_storage">掃描外部儲存空間中的所有文件</string>
 
-    <!-- 設置 -->
+    
     <string name="global_header">全域性</string>
     <string name="reject_nonstandard_dir_title">禁止建立不規範資料夾</string>
     <string name="reject_nonstandard_dir_summary">在 AOSP 中系統應用不會建立非標準資料夾，但是一些裝置生產商修改了這一行為。</string>
@@ -78,6 +78,11 @@
     <string name="apply_to_app_title">應用到應用</string>
     <string name="permitted_media_types_title">允許的媒體型別</string>
     <string name="filter_path_title">過濾路徑</string>
+
+    <string name="read_only_path_key" translatable="false">read_only_path</string>
+    <string name="read_only_path_title">唯讀路徑 (阻止寫入)</string>
+    <string name="read_only_path_dialog_title">編輯唯讀路徑列表</string>
+
     <string name="add_path">新增路徑</string>
 <string name="redirect_path_key">redirect_path</string>
 <string name="redirect_path_title">重定向至</string>
@@ -85,7 +90,7 @@
     <string name="save">儲存</string>
     <string name="quit_without_save">更改未儲存，您確定要退出嗎？</string>
 
-    <!-- 媒體儲存 -->
+    
     <string name="today">今天</string>
     <string name="yesterday">昨天</string>
     <string name="rationale_shouldShowRationale">訪問其它應用建立的媒體檔案需要讀取外部儲存空間許可權</string>
@@ -93,7 +98,7 @@
     <string name="revoke_self_permission">只顯示自己的媒體檔案需要撤銷應用的讀取外部儲存空間許可權，請在應用訊息中手動撤銷</string>
     <string name="unsupported_delete_in_bulk">安卓 Q 的媒體儲存不支援批次刪除</string>
 
-    <!-- 實驗 -->
+    
     <string name="playground_header">這裡有一些關於媒體儲存的實驗，您可以透過它們瞭解媒體儲存和測試模組功能。</string>
     <string name="no_wifi">當前沒有連線到 wifi 網路，此實驗將會消耗您的資料流量，是否繼續？</string>
     <string name="start">開始</string>

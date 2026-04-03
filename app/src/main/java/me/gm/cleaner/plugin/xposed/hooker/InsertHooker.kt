@@ -48,14 +48,13 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
         var finalData = data
         var redirected = false
         
-        // 解析重定向规则：附带优先级标签
-        // minWithOrNull：先按 isGlobal 升序(false优先)，再按路径长度降序(越长越优先)
+        // 解析重定向规则：附带优先级标签，遵循特定应用优先且长路径优先的逻辑
         val activeRule = templates.values
             .flatMap { template ->
                 val isGlobal = template.applyToApp.isNullOrEmpty()
                 template.redirectRules?.map { rule -> Pair(isGlobal, rule) } ?: emptyList()
             }
-            .filter { (_, rule) -> data.startsWith(rule.source) }
+            .filter { (_, rule) -> data.startsWith(rule.source, true) }
             .minWithOrNull(compareBy({ it.first }, { -it.second.source.length }))
             ?.second
 
@@ -78,9 +77,16 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
 
         var shouldIntercept = false
         if (!redirected) {
-            shouldIntercept = templates.applyTemplates(listOf(data), listOf(mimeType)).first()
+            shouldIntercept = templates.applyTemplates(listOf(data), listOf(mimeType), isInsert = true).first()
             if (shouldIntercept) {
                 param.result = null
+            }
+        } else {
+            // 被重定向的文件仍受只读目录检测规则的影响
+            val isReadOnly = templates.values.any { t -> t.readOnlyPath?.any { finalData.startsWith(it, true) } == true }
+            if (isReadOnly) {
+                param.result = null
+                shouldIntercept = true
             }
         }
 

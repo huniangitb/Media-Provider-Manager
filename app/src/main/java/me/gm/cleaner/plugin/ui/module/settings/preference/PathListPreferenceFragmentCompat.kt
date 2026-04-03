@@ -1,19 +1,3 @@
-/*
- * Copyright 2021 Green Mushroom
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package me.gm.cleaner.plugin.ui.module.settings.preference
 
 import android.annotation.SuppressLint
@@ -71,7 +55,6 @@ class PathListPreferenceFragmentCompat : PreferenceDialogFragmentCompat(),
         ActivityResultContracts.OpenDocumentTree(), this::onFragmentResult
     )
 
-    // "preferences" should be retained to survive configuration change, but I'm too lazy to do this :)
     private val preferences = mutableListOf<Preference>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -188,7 +171,12 @@ class PathListPreferenceFragmentCompat : PreferenceDialogFragmentCompat(),
     fun onFragmentResult(result: Uri?) {
         result ?: return
         val target = treeUriToFile(result, requireContext()) ?: return
-        newValues += target.path
+        var path = target.path
+        // 从 UI 选择目录时自动尾随 /，以防目录名意外子串匹配
+        if (!path.endsWith("/")) {
+            path += "/"
+        }
+        newValues += path
     }
 
     override fun onDestroyView() {

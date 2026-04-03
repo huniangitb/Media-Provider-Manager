@@ -174,7 +174,7 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
         }
 
         val redirectionMap = mutableMapOf<String, String>()
-        // 使用 reversed() 遍历，使得特定应用的规则最后被装入 map 中，从而实现优先级覆盖
+        // 保证特定应用重定向优先覆盖，遍历时从后向前（假定优先级最高的排在最前面，故使用 reversed ）
         templates.values.reversed().forEach { template ->
             template.redirectRules?.forEach { rule ->
                 redirectionMap[rule.target] = rule.source
@@ -191,7 +191,8 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
             wrappedCursor = RedirectedCursor(c, redirectionMap)
         }
         
-        val shouldIntercept = templates.applyTemplates(dataList, mimeTypeList)
+        // 传递 isInsert=false 忽略 Query 时只读路径校验
+        val shouldIntercept = templates.applyTemplates(dataList, mimeTypeList, isInsert = false)
         if (shouldIntercept.any { it }) {
             wrappedCursor.moveToFirst()
             val filter = shouldIntercept
@@ -230,7 +231,7 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
             val value = super.getString(columnIndex)
             if (columnIndex == dataColumnIndex && value != null) {
                 for ((realPath, originalPath) in redirectMap) {
-                    if (value.startsWith(realPath)) {
+                    if (value.startsWith(realPath, true)) {
                         return value.replaceFirst(realPath, originalPath)
                     }
                 }

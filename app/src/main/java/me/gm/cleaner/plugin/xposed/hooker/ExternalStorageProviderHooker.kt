@@ -31,13 +31,24 @@ class ExternalStorageProviderHooker(private val service: ManagerService) : XC_Me
 
         val templates = service.ruleSp.templates.values
         
-        // 解析重定向规则：附带优先级标签，应用级别优先于全局级别
+        // 解析 SAF 只读目录创建拦截 (SAF是独立进程，目前视同适用所有匹配该路径的全局和应用规则)
+        val isReadOnly = templates.any { template ->
+            template.readOnlyPath?.any { targetFullPath.startsWith(it, true) } == true
+        }
+
+        if (isReadOnly) {
+            XposedBridge.log("MPM_SAF_Hook: Blocked createDocument (RO): $targetFullPath")
+            param.result = null
+            return
+        }
+
+        // 解析重定向规则：附带优先级标签，应用级别优先于全局级别，更长的路径优先
         val activeRule = templates
             .flatMap { template ->
                 val isGlobal = template.applyToApp.isNullOrEmpty()
                 template.redirectRules?.map { rule -> Pair(isGlobal, rule) } ?: emptyList()
             }
-            .filter { (_, rule) -> targetFullPath.startsWith(rule.source) }
+            .filter { (_, rule) -> targetFullPath.startsWith(rule.source, true) }
             .minWithOrNull(compareBy({ it.first }, { -it.second.source.length }))
             ?.second
 

@@ -37,18 +37,23 @@ class FileHooker(
             hostPackageName
         }
 
-        // 获取并按优先级排序模板：特定应用在前，全局在后
-        val sortedTemplates = service.ruleSp.templates.values
-            .filter { it.redirectRules?.isNotEmpty() == true }
+        // 获取排序后的规则（特定应用规则排在前面）
+        val templates = service.ruleSp.templates.values
             .sortedBy { if (it.applyToApp.isNullOrEmpty()) 1 else 0 }
         
-        for (template in sortedTemplates) {
+        for (template in templates) {
             val isGlobal = template.applyToApp.isNullOrEmpty()
-            // 如果既不是全局规则，又不在匹配名单中，并且非本进程操作，跳过
             if (!isGlobal && !template.applyToApp!!.contains(callingPackage) && uid != myUid) {
                 continue
             }
             
+            // 校验只读目录，拦截直接创建
+            if (template.readOnlyPath?.any { path.startsWith(it, true) } == true) {
+                XposedBridge.log("MPM_FileGuard: Blocked mkdir (RO) [$callingPackage]: $rawPath")
+                param.result = false
+                return
+            }
+
             template.redirectRules?.forEach { rule ->
                 if (FileUtils.contains(rule.source, path)) {
                     val redirectedPathStandard = path.replaceFirst(rule.source, rule.target)

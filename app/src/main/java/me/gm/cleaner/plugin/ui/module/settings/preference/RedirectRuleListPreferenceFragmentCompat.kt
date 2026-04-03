@@ -2,7 +2,6 @@ package me.gm.cleaner.plugin.ui.module.settings.preference
 
 import android.annotation.SuppressLint
 import android.app.Dialog
-import android.content.DialogInterface
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -26,8 +25,6 @@ class RedirectRuleListPreferenceFragmentCompat : PreferenceDialogFragmentCompat(
     private lateinit var adapter: RedirectRuleAdapter
     
     var currentRules = mutableListOf<RedirectRule>()
-    
-    // 暂存当前正在编辑的 Binding，用于文件选择器回调更新 UI
     private var editingBinding: DialogEditRedirectRuleBinding? = null
 
     private val openDocumentTreeLauncher = registerForActivityResult(
@@ -35,13 +32,18 @@ class RedirectRuleListPreferenceFragmentCompat : PreferenceDialogFragmentCompat(
     ) { uri ->
         uri?.let {
             val file = treeUriToFile(it, requireContext())
-            editingBinding?.targetEditText?.setText(file?.path)
+            var path = file?.path
+            // 通过文件UI添加路径时附加一个 /
+            if (path != null && !path.endsWith("/")) {
+                path += "/"
+            }
+            editingBinding?.targetEditText?.setText(path)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 全屏对话框样式
+        
         setStyle(STYLE_NORMAL, R.style.AppTheme_FullScreenDialog)
         adapter = RedirectRuleAdapter(this)
         currentRules = ruleListPreference.rules.toMutableList()
