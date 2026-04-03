@@ -29,29 +29,37 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    # 仅构建 Release 版本 APK
+    # 构建 Release 和 Debug 版本 APK
     - name: Build with Gradle
-      run: 
-           
+      run: |
            ./gradlew assembleRelease
+           ./gradlew assembleDebug
 
     # 1. 保存 APK 到 Github Artifacts (Action 页面可下载)
-    - name: Upload Artifact
+    - name: Upload Artifact - Release
       uses: actions/upload-artifact@v4
       with:
-        name: Media-Provider-Manager-APK
+        name: Media-Provider-Manager-Release-APK
         path: app/build/outputs/apk/release/*.apk
 
-    # 2. 如果推送到 main 分支，自动创建/更新 Release
+    - name: Upload Artifact - Debug
+      uses: actions/upload-artifact@v4
+      with:
+        name: Media-Provider-Manager-Debug-APK
+        path: app/build/outputs/apk/debug/*.apk
+
+    # 2. 如果推送到 main 分支，自动创建/更新 Release（包含 Release 和 Debug 版本）
     - name: Create Release
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
         tag_name: latest
         name: "Latest Beta Build"
-        body: "Automated build from main branch."
+        body: "Automated build from main branch.\n\n包含 Release 和 Debug 两个版本。"
         draft: false
         prerelease: true
-        files: app/build/outputs/apk/release/*.apk
+        files: |
+          app/build/outputs/apk/release/*.apk
+          app/build/outputs/apk/debug/*.apk
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

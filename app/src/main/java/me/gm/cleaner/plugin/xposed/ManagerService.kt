@@ -31,93 +31,27 @@ abstract class ManagerService : IManagerService.Stub() {
         protected set
     lateinit var context: Context
         private set
-    private lateinit var database: MediaProviderRecordDatabase
-    lateinit var dao: MediaProviderRecordDao
-        private set
-    private val observers = RemoteCallbackList<IMediaChangeObserver>()
 
-    // 使用 Device Protected Storage，确保在 FBE 加密阶段也能读取规则文件。
-    private val safeContext: Context by lazy {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !context.isDeviceProtectedStorage) {
-            context.createDeviceProtectedStorageContext()
-        } else {
-            context
-        }
-    }
+    // 获取进程单例实例，确保永远不会返回空对象导致 NPE
+    val rootSp: JsonFileSpImpl
+        get() = sRootSp ?: JsonFileSpImpl(File("/dev/null"))
 
-    val rootSp by lazy {
-        try {
-            JsonFileSpImpl(File(safeContext.filesDir, "root"))
-        } catch (e: Throwable) {
-            XposedBridge.log("MPM_Init: Failed to init rootSp. Safe to ignore during Direct Boot: ${e.message}")
-            JsonFileSpImpl(File("/dev/null"))
-        }
-    }
+    val ruleSp: TemplatesJsonFileSpImpl
+        get() = sRuleSp ?: TemplatesJsonFileSpImpl(File("/dev/null"))
 
-    val ruleSp by lazy {
-        try {
-            TemplatesJsonFileSpImpl(File(safeContext.filesDir, "rule"))
-        } catch (e: Throwable) {
-            XposedBridge.log("MPM_Init: Failed to init ruleSp. Safe to ignore during Direct Boot: ${e.message}")
-            TemplatesJsonFileSpImpl(File("/dev/null"))
-        }
-    }
-    
-    private lateinit var usageRecordSocketServer: UsageRecordSocketServer
-    private lateinit var commandSocketServer: CommandSocketServer
-    
-    // 关键修复：加入防重入锁。如果两个 Provider 在同一个进程中（如 MediaProvider 和 Downloads）
-    // 该锁能防止数据库和 Socket 被二次实例化导致端口占用异常（Address already in use）
-    private var isInitialized = false
-
-    @Synchronized
     protected fun onCreate(context: Context) {
-        if (isInitialized) return
-        isInitialized = true
-        
         this.context = context
-        
-        try {
-            val dbContext = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !context.isDeviceProtectedStorage) {
-                context.createDeviceProtectedStorageContext()
-            } else {
-                context
-            }
-
-            database = Room
-                .databaseBuilder(
-                    dbContext,
-                    MediaProviderRecordDatabase::class.java,
-                    MEDIA_PROVIDER_USAGE_RECORD_DATABASE_NAME
-                )
-                .addMigrations(MIGRATION_1_2)
-                .build()
-            dao = database.mediaProviderRecordDao()
-        } catch (e: Throwable) {
-            XposedBridge.log("MPM_DB: Failed to init Room database (often expected during Direct Boot): ${e.message}")
-        }
-
-        usageRecordSocketServer = UsageRecordSocketServer()
-        usageRecordSocketServer.start()
-
-        commandSocketServer = CommandSocketServer()
-        commandSocketServer.start()
+        initGlobalServices(context, this)
     }
 
     fun recordUsage(record: MediaProviderRecord) {
         try {
-            if (::dao.isInitialized) {
-                dao.insert(record)
-            }
-        } catch (e: Throwable) {
-        }
+            sDao?.insert(record)
+        } catch (ignored: Throwable) {}
         
         try {
-            if (::usageRecordSocketServer.isInitialized) {
-                usageRecordSocketServer.broadcast(record)
-            }
-        } catch (e: Throwable) {
-        }
+            sUsageRecordSocketServer?.broadcast(record)
+        } catch (ignored: Throwable) {}
     }
 
     private val packageManagerService: IInterface by lazy {
@@ -168,29 +102,29 @@ abstract class ManagerService : IManagerService.Stub() {
     }
 
     override fun clearAllTables() {
-        if (::database.isInitialized) {
-            database.clearAllTables()
-        }
+        try {
+            sDatabase?.clearAllTables()
+        } catch (ignored: Throwable) {}
     }
 
     override fun packageUsageTimes(operation: Int, packageNames: List<String>) =
-        if (::dao.isInitialized) dao.packageUsageTimes(operation, *packageNames.toTypedArray()) else 0
+        sDao?.packageUsageTimes(operation, *packageNames.toTypedArray()) ?: 0
 
     override fun registerMediaChangeObserver(observer: IMediaChangeObserver) {
-        observers.register(observer)
+        sObservers.register(observer)
     }
 
     override fun unregisterMediaChangeObserver(observer: IMediaChangeObserver) {
-        observers.unregister(observer)
+        sObservers.unregister(observer)
     }
 
     @Synchronized
     fun dispatchMediaChange() {
         try {
-            var i = observers.beginBroadcast()
+            var i = sObservers.beginBroadcast()
             while (i > 0) {
                 i--
-                val observer = observers.getBroadcastItem(i)
+                val observer = sObservers.getBroadcastItem(i)
                 if (observer != null) {
                     try {
                         observer.onChange()
@@ -198,29 +132,85 @@ abstract class ManagerService : IManagerService.Stub() {
                     }
                 }
             }
-            observers.finishBroadcast()
+            sObservers.finishBroadcast()
         } catch (e: Throwable) {
             XposedBridge.log("MPM_Observer: dispatchMediaChange failed: ${e.message}")
         }
     }
 
-    inner class CommandSocketServer {
-        private var isRunning = false
+    companion object {
+        const val MEDIA_PROVIDER_USAGE_RECORD_DATABASE_NAME = "media_provider.db"
 
+        @Volatile private var sIsInitialized = false
+        @Volatile private var sDatabase: MediaProviderRecordDatabase? = null
+        @Volatile private var sDao: MediaProviderRecordDao? = null
+        @Volatile private var sRootSp: JsonFileSpImpl? = null
+        @Volatile private var sRuleSp: TemplatesJsonFileSpImpl? = null
+        @Volatile private var sUsageRecordSocketServer: UsageRecordSocketServer? = null
+        @Volatile private var sCommandSocketServer: CommandSocketServer? = null
+        private val sObservers = RemoteCallbackList<IMediaChangeObserver>()
+
+        @Synchronized
+        fun initGlobalServices(context: Context, service: ManagerService) {
+            if (sIsInitialized) return
+            sIsInitialized = true
+            
+            val safeCtx = try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !context.isDeviceProtectedStorage) {
+                    context.createDeviceProtectedStorageContext()
+                } else context
+            } catch (e: Throwable) {
+                context
+            }
+
+            sRootSp = try {
+                JsonFileSpImpl(File(safeCtx.filesDir, "root"))
+            } catch (e: Throwable) {
+                JsonFileSpImpl(File("/dev/null"))
+            }
+
+            sRuleSp = try {
+                TemplatesJsonFileSpImpl(File(safeCtx.filesDir, "rule"))
+            } catch (e: Throwable) {
+                TemplatesJsonFileSpImpl(File("/dev/null"))
+            }
+
+            try {
+                sDatabase = Room
+                    .databaseBuilder(
+                        safeCtx,
+                        MediaProviderRecordDatabase::class.java,
+                        MEDIA_PROVIDER_USAGE_RECORD_DATABASE_NAME
+                    )
+                    .addMigrations(MIGRATION_1_2)
+                    .build()
+                sDao = sDatabase?.mediaProviderRecordDao()
+            } catch (e: Throwable) {
+                XposedBridge.log("MPM_DB: Room init failed: ${e.message}")
+            }
+
+            sUsageRecordSocketServer = UsageRecordSocketServer(context.packageName)
+            sUsageRecordSocketServer?.start()
+
+            sCommandSocketServer = CommandSocketServer(context.packageName, service)
+            sCommandSocketServer?.start()
+        }
+    }
+
+    class CommandSocketServer(private val pkg: String, private val service: ManagerService) {
+        private var isRunning = false
         fun start() {
             if (isRunning) return
             isRunning = true
-            thread(name = "CommandSocketServer") {
+            thread(name = "CommandServer-$pkg") {
                 try {
-                    val socketName = "me.gm.cleaner.command.${context.packageName}"
+                    val socketName = "me.gm.cleaner.command.$pkg"
                     val serverSocket = LocalServerSocket(socketName)
-                    XposedBridge.log("MPM_Socket: Command server listening on $socketName")
                     while (isRunning) {
                         val client = serverSocket.accept()
                         thread { handleClient(client) }
                     }
                 } catch (e: Throwable) {
-                    XposedBridge.log("MPM_Socket: CommandSocketServer failed on ${context.packageName}: ${e.message}")
                     isRunning = false
                 }
             }
@@ -234,54 +224,49 @@ abstract class ManagerService : IManagerService.Stub() {
                         if (input.isNotEmpty()) {
                             when {
                                 input == "RELOAD_RULES" -> {
-                                    val success = ruleSp.reload()
+                                    val success = sRuleSp?.reload() ?: false
                                     writer.write(if (success) "SUCCESS\n" else "FAILED\n")
                                 }
                                 input == "RELOAD_ROOT" -> {
-                                    val success = rootSp.reload()
+                                    val success = sRootSp?.reload() ?: false
                                     writer.write(if (success) "SUCCESS\n" else "FAILED\n")
                                 }
                                 input.startsWith("[") -> {
-                                    writeSp(R.xml.template_preferences, input)
+                                    service.writeSp(R.xml.template_preferences, input)
                                     writer.write("SUCCESS\n")
                                 }
                                 input.startsWith("{") -> {
-                                    writeSp(R.xml.root_preferences, input)
+                                    service.writeSp(R.xml.root_preferences, input)
                                     writer.write("SUCCESS\n")
                                 }
-                                else -> {
-                                    writer.write("UNKNOWN_COMMAND\n")
-                                }
+                                else -> writer.write("UNKNOWN_COMMAND\n")
                             }
                             writer.flush()
                         }
                     }
                 }
-            } catch (e: Throwable) {
+            } catch (ignored: Throwable) {
             } finally {
                 try { client.close() } catch (ignored: Exception) {}
             }
         }
     }
 
-    inner class UsageRecordSocketServer {
+    class UsageRecordSocketServer(private val pkg: String) {
         private val clients = CopyOnWriteArrayList<LocalSocket>()
         private var isRunning = false
-
         fun start() {
             if (isRunning) return
             isRunning = true
-            thread(name = "UsageRecordSocketServer") {
+            thread(name = "UsageServer-$pkg") {
                 try {
-                    val socketName = "me.gm.cleaner.usage_record.${context.packageName}"
+                    val socketName = "me.gm.cleaner.usage_record.$pkg"
                     val serverSocket = LocalServerSocket(socketName)
-                    XposedBridge.log("MPM_Socket: UsageRecord server listening on $socketName")
                     while (isRunning) {
                         val client = serverSocket.accept()
                         clients.add(client)
                     }
                 } catch (e: Throwable) {
-                    XposedBridge.log("MPM_Socket: UsageRecordSocketServer failed on ${context.packageName}: ${e.message}")
                     isRunning = false
                 }
             }
@@ -289,8 +274,7 @@ abstract class ManagerService : IManagerService.Stub() {
 
         fun broadcast(record: MediaProviderRecord) {
             if (clients.isEmpty()) return
-            
-            val jsonObject = JSONObject().apply {
+            val json = JSONObject().apply {
                 put("timeMillis", record.timeMillis)
                 put("packageName", record.packageName)
                 put("match", record.match)
@@ -298,12 +282,9 @@ abstract class ManagerService : IManagerService.Stub() {
                 put("data", JSONArray(record.data))
                 put("mimeType", JSONArray(record.mimeType))
                 put("intercepted", JSONArray(record.intercepted))
-            }
-            val jsonStr = jsonObject.toString() + "\n"
-            val bytes = jsonStr.toByteArray()
-            
-            val iterator = clients.iterator()
-            for (client in iterator) {
+            }.toString() + "\n"
+            val bytes = json.toByteArray()
+            clients.forEach { client ->
                 try {
                     client.outputStream.write(bytes)
                     client.outputStream.flush()
@@ -313,9 +294,5 @@ abstract class ManagerService : IManagerService.Stub() {
                 }
             }
         }
-    }
-
-    companion object {
-        const val MEDIA_PROVIDER_USAGE_RECORD_DATABASE_NAME = "media_provider.db"
     }
 }
