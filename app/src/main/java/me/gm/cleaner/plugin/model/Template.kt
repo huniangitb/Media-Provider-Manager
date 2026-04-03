@@ -74,12 +74,16 @@ class Templates(json: String?) {
                 }
             }
 
-            // 3. 降低媒体类型限制优先级：如果操作已被明确拦截(RO/过滤)，则无需再看媒体类型
+            // 3. 媒体类型限制：仅当未被明确拦截时校验
             if (!isFiltered && !isReadOnly) {
-                // 取优先级最高（特定应用覆盖全局）且设置了媒体类型的模板进行判断
+                // 找到第一个设置了媒体类型限制的模板 (匹配即止)
                 val effectiveTemplate = activeTemplates.firstOrNull { it.permittedMediaTypes != null }
-                if (effectiveTemplate != null) {
-                    isMediaTypeNotPermitted = MimeUtils.resolveMediaType(mimeType) !in effectiveTemplate.permittedMediaTypes
+                val permittedTypes = effectiveTemplate?.permittedMediaTypes
+                if (permittedTypes != null) {
+                    val currentType = MimeUtils.resolveMediaType(mimeType)
+                    if (currentType !in permittedTypes) {
+                        isMediaTypeNotPermitted = true
+                    }
                 }
             }
 
