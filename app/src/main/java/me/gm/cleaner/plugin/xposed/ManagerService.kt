@@ -6,6 +6,7 @@ import android.content.res.Resources
 import android.net.LocalServerSocket
 import android.net.LocalSocket
 import android.os.*
+import androidx.core.content.ContextCompat
 import androidx.room.Room
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
@@ -35,18 +36,51 @@ abstract class ManagerService : IManagerService.Stub() {
     lateinit var dao: MediaProviderRecordDao
         private set
     private val observers = RemoteCallbackList<IMediaChangeObserver>()
-    val rootSp by lazy { JsonFileSpImpl(File(context.filesDir, "root")) }
-    val ruleSp by lazy { TemplatesJsonFileSpImpl(File(context.filesDir, "rule")) }
+
+    // 使用 Device Protected Storage，确保在 FBE 加密（设备刚重启未解锁屏幕）阶段也能读取规则文件。
+    private val safeContext: Context by lazy {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !context.isDeviceProtectedStorage) {
+            context.createDeviceProtectedStorageContext()
+        } else {
+            context
+        }
+    }
+
+    val rootSp by lazy {
+        try {
+            JsonFileSpImpl(File(safeContext.filesDir, "root"))
+        } catch (e: Throwable) {
+            XposedBridge.log("MPM_Init: Failed to init rootSp. Safe to ignore during Direct Boot: ${e.message}")
+            JsonFileSpImpl(File("/dev/null")) // 返回一个无效的空文件实现以防止后续抛出 NPE
+        }
+    }
+
+    val ruleSp by lazy {
+        try {
+            TemplatesJsonFileSpImpl(File(safeContext.filesDir, "rule"))
+        } catch (e: Throwable) {
+            XposedBridge.log("MPM_Init: Failed to init ruleSp. Safe to ignore during Direct Boot: ${e.message}")
+            TemplatesJsonFileSpImpl(File("/dev/null"))
+        }
+    }
     
     private lateinit var usageRecordSocketServer: UsageRecordSocketServer
     private lateinit var commandSocketServer: CommandSocketServer
 
     protected fun onCreate(context: Context) {
         this.context = context
+        
         try {
+            // Room 数据库不需要在 Direct Boot 阶段强制创建，若失败则 dao 保持未初始化状态
+            val dbContext = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !context.isDeviceProtectedStorage) {
+                context.createDeviceProtectedStorageContext()
+            } else {
+                context
+            }
+
             database = Room
                 .databaseBuilder(
-                    context,
+                    dbContext,
                     MediaProviderRecordDatabase::class.java,
                     MEDIA_PROVIDER_USAGE_RECORD_DATABASE_NAME
                 )
@@ -54,7 +88,7 @@ abstract class ManagerService : IManagerService.Stub() {
                 .build()
             dao = database.mediaProviderRecordDao()
         } catch (e: Throwable) {
-            XposedBridge.log("MPM_DB: Failed to init Room database: ${e.message}")
+            XposedBridge.log("MPM_DB: Failed to init Room database (often expected during Direct Boot): ${e.message}")
         }
 
         usageRecordSocketServer = UsageRecordSocketServer()
@@ -70,13 +104,12 @@ abstract class ManagerService : IManagerService.Stub() {
                 dao.insert(record)
             }
         } catch (e: Throwable) {
-            XposedBridge.log("MPM_DB: dao.insert failed: ${e.message}")
+            // 降低日志级别或直接忽略，防止频繁刷屏
         }
         
         try {
             usageRecordSocketServer.broadcast(record)
         } catch (e: Throwable) {
-            XposedBridge.log("MPM_Socket: broadcast failed: ${e.message}")
         }
     }
 
@@ -172,7 +205,6 @@ abstract class ManagerService : IManagerService.Stub() {
             isRunning = true
             thread(name = "CommandSocketServer") {
                 try {
-                    // 为 Socket 添加应用包名后缀，防止多个被注入的进程发生端口抢占冲突
                     val socketName = "me.gm.cleaner.command.${context.packageName}"
                     val serverSocket = LocalServerSocket(socketName)
                     XposedBridge.log("MPM_Socket: Command server listening on $socketName")
@@ -191,27 +223,24 @@ abstract class ManagerService : IManagerService.Stub() {
             try {
                 client.inputStream.bufferedReader().use { reader ->
                     client.outputStream.bufferedWriter().use { writer ->
-                        val command = reader.readLine()
-                        if (command != null) {
-                            when (command.trim()) {
-                                "RELOAD_RULES" -> {
-                                    try {
-                                        // 借用 UI 写入方法机制：直接读取磁盘文件并投递，这会强制触发全部缓存更新操作
-                                        val content = ruleSp.file.readText()
-                                        writeSp(R.xml.template_preferences, content)
-                                        writer.write("SUCCESS\n")
-                                    } catch (e: Exception) {
-                                        writer.write("FAILED: ${e.message}\n")
-                                    }
+                        val input = reader.readText().trim()
+                        if (input.isNotEmpty()) {
+                            when {
+                                input == "RELOAD_RULES" -> {
+                                    val success = ruleSp.reload()
+                                    writer.write(if (success) "SUCCESS\n" else "FAILED\n")
                                 }
-                                "RELOAD_ROOT" -> {
-                                    try {
-                                        val content = rootSp.file.readText()
-                                        writeSp(R.xml.root_preferences, content)
-                                        writer.write("SUCCESS\n")
-                                    } catch (e: Exception) {
-                                        writer.write("FAILED: ${e.message}\n")
-                                    }
+                                input == "RELOAD_ROOT" -> {
+                                    val success = rootSp.reload()
+                                    writer.write(if (success) "SUCCESS\n" else "FAILED\n")
+                                }
+                                input.startsWith("[") -> {
+                                    writeSp(R.xml.template_preferences, input)
+                                    writer.write("SUCCESS\n")
+                                }
+                                input.startsWith("{") -> {
+                                    writeSp(R.xml.root_preferences, input)
+                                    writer.write("SUCCESS\n")
                                 }
                                 else -> {
                                     writer.write("UNKNOWN_COMMAND\n")
@@ -237,7 +266,6 @@ abstract class ManagerService : IManagerService.Stub() {
             isRunning = true
             thread(name = "UsageRecordSocketServer") {
                 try {
-                    // 同样为使用记录的 Socket 绑定添加包名
                     val socketName = "me.gm.cleaner.usage_record.${context.packageName}"
                     val serverSocket = LocalServerSocket(socketName)
                     XposedBridge.log("MPM_Socket: UsageRecord server listening on $socketName")

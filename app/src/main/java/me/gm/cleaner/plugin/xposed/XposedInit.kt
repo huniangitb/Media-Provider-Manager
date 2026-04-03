@@ -19,10 +19,6 @@ import java.io.File
 
 class XposedInit : ManagerService(), IXposedHookLoadPackage, IXposedHookZygoteInit {
 
-    /**
-     * 当媒体存储进程加载时调用
-     * 处理对 MediaStore 数据库的直接查询、插入和删除
-     */
     @Throws(Throwable::class)
     private fun onMediaProviderLoaded(lpparam: LoadPackageParam, context: Context) {
         val mediaProvider = try {
@@ -35,7 +31,6 @@ class XposedInit : ManagerService(), IXposedHookLoadPackage, IXposedHookZygoteIn
         classLoader = lpparam.classLoader
         onCreate(context)
         
-        // 挂钩数据库操作
         XposedBridge.hookAllMethods(
             mediaProvider, "queryInternal", QueryHooker(this@XposedInit)
         )
@@ -47,39 +42,25 @@ class XposedInit : ManagerService(), IXposedHookLoadPackage, IXposedHookZygoteIn
         )
     }
 
-    /**
-     * 当下载管理器进程加载时调用
-     * 某些应用会通过 DownloadManager 绕过直接的文件读写限制
-     */
     @Throws(Throwable::class)
     private fun onDownloadManagerLoaded(lpparam: LoadPackageParam, context: Context) {
         classLoader = lpparam.classLoader
         onCreate(context)
         
-        // 挂钩底层目录创建操作
         val hooker = FileHooker(this@XposedInit, "com.android.providers.downloads")
         XposedHelpers.findAndHookMethod(File::class.java, "mkdir", hooker)
         XposedHelpers.findAndHookMethod(File::class.java, "mkdirs", hooker)
     }
 
-    /**
-     * 当外部存储提供者加载时调用 (核心：处理 SAF 绕过)
-     * 对应包名：com.android.externalstorage
-     * 作用：拦截 DocumentTree/SAF 创建文件操作
-     */
     @Throws(Throwable::class)
     private fun onExternalStorageLoaded(lpparam: LoadPackageParam, context: Context) {
         classLoader = lpparam.classLoader
         onCreate(context)
 
-        // 1. 挂钩底层文件 API
-        // ExternalStorageProvider 内部会直接操作 Java File 
         val fileHooker = FileHooker(this@XposedInit, "com.android.externalstorage")
         XposedHelpers.findAndHookMethod(File::class.java, "mkdir", fileHooker)
         XposedHelpers.findAndHookMethod(File::class.java, "mkdirs", fileHooker)
 
-        // 2. 挂钩 SAF 通信层 (DocumentsProvider)
-        // 很多应用获取了 /storage/emulated/0 的 SAF 权限后，会通过此接口创建文件
         try {
             val providerClass = XposedHelpers.findClass(
                 "com.android.externalstorage.ExternalStorageProvider", 
@@ -87,13 +68,12 @@ class XposedInit : ManagerService(), IXposedHookLoadPackage, IXposedHookZygoteIn
             )
             val safHooker = ExternalStorageProviderHooker(this@XposedInit)
             
-            // 拦截 createDocument 方法
             XposedHelpers.findAndHookMethod(
                 providerClass, 
                 "createDocument", 
-                String::class.java, // parentDocumentId
-                String::class.java, // mimeType
-                String::class.java, // displayName
+                String::class.java, 
+                String::class.java, 
+                String::class.java, 
                 safHooker
             )
         } catch (e: Throwable) {
@@ -103,20 +83,21 @@ class XposedInit : ManagerService(), IXposedHookLoadPackage, IXposedHookZygoteIn
 
     @Throws(Throwable::class)
     override fun handleLoadPackage(lpparam: LoadPackageParam) {
-        // 仅处理系统级存储应用
+        
         if (lpparam.appInfo.flags and ApplicationInfo.FLAG_SYSTEM == 0) {
             return
         }
 
-        // 通过拦截 ContentProvider.attachInfo 来获取 Context 并初始化逻辑
         XposedHelpers.findAndHookMethod(
             ContentProvider::class.java, "attachInfo",
             Context::class.java, ProviderInfo::class.java, Boolean::class.java,
             object : XC_MethodHook() {
                 @Throws(Throwable::class)
                 override fun beforeHookedMethod(param: MethodHookParam) {
-                    val context = param.args[0] as Context
-                    val providerInfo = param.args[1] as ProviderInfo
+                    // 设备在加密状态（Direct Boot / FBE 未解锁）或系统初始化早期时，可能会传入 null 的 ProviderInfo。
+                    // 此时如果强转会导致 NullPointerException，必须增加安全空校验。
+                    val context = param.args[0] as? Context ?: return
+                    val providerInfo = param.args[1] as? ProviderInfo ?: return
                     
                     when (providerInfo.authority) {
                         MediaStore.AUTHORITY -> {
@@ -134,9 +115,6 @@ class XposedInit : ManagerService(), IXposedHookLoadPackage, IXposedHookZygoteIn
         )
     }
 
-    /**
-     * 初始 Zygote 启动时获取模块资源，用于在 Hook 逻辑中访问 strings.xml 等
-     */
     @Throws(Throwable::class)
     override fun initZygote(startupParam: IXposedHookZygoteInit.StartupParam) {
         val assetManager = AssetManager::class.java.newInstance()
