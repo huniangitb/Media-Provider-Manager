@@ -6,7 +6,6 @@ import android.content.res.Resources
 import android.net.LocalServerSocket
 import android.net.LocalSocket
 import android.os.*
-import androidx.core.content.ContextCompat
 import androidx.room.Room
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
@@ -37,7 +36,7 @@ abstract class ManagerService : IManagerService.Stub() {
         private set
     private val observers = RemoteCallbackList<IMediaChangeObserver>()
 
-    // 使用 Device Protected Storage，确保在 FBE 加密（设备刚重启未解锁屏幕）阶段也能读取规则文件。
+    // 使用 Device Protected Storage，确保在 FBE 加密阶段也能读取规则文件。
     private val safeContext: Context by lazy {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !context.isDeviceProtectedStorage) {
             context.createDeviceProtectedStorageContext()
@@ -51,7 +50,7 @@ abstract class ManagerService : IManagerService.Stub() {
             JsonFileSpImpl(File(safeContext.filesDir, "root"))
         } catch (e: Throwable) {
             XposedBridge.log("MPM_Init: Failed to init rootSp. Safe to ignore during Direct Boot: ${e.message}")
-            JsonFileSpImpl(File("/dev/null")) // 返回一个无效的空文件实现以防止后续抛出 NPE
+            JsonFileSpImpl(File("/dev/null"))
         }
     }
 
@@ -66,12 +65,19 @@ abstract class ManagerService : IManagerService.Stub() {
     
     private lateinit var usageRecordSocketServer: UsageRecordSocketServer
     private lateinit var commandSocketServer: CommandSocketServer
+    
+    // 关键修复：加入防重入锁。如果两个 Provider 在同一个进程中（如 MediaProvider 和 Downloads）
+    // 该锁能防止数据库和 Socket 被二次实例化导致端口占用异常（Address already in use）
+    private var isInitialized = false
 
+    @Synchronized
     protected fun onCreate(context: Context) {
+        if (isInitialized) return
+        isInitialized = true
+        
         this.context = context
         
         try {
-            // Room 数据库不需要在 Direct Boot 阶段强制创建，若失败则 dao 保持未初始化状态
             val dbContext = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !context.isDeviceProtectedStorage) {
                 context.createDeviceProtectedStorageContext()
             } else {
@@ -104,11 +110,12 @@ abstract class ManagerService : IManagerService.Stub() {
                 dao.insert(record)
             }
         } catch (e: Throwable) {
-            // 降低日志级别或直接忽略，防止频繁刷屏
         }
         
         try {
-            usageRecordSocketServer.broadcast(record)
+            if (::usageRecordSocketServer.isInitialized) {
+                usageRecordSocketServer.broadcast(record)
+            }
         } catch (e: Throwable) {
         }
     }
