@@ -32,7 +32,6 @@ abstract class ManagerService : IManagerService.Stub() {
     lateinit var context: Context
         private set
 
-    // 重新公开属性，确保 Hooker 能够访问
     val rootSp: JsonFileSpImpl
         get() = sRootSp ?: JsonFileSpImpl(File("/dev/null"))
 
@@ -192,10 +191,11 @@ abstract class ManagerService : IManagerService.Stub() {
                 XposedBridge.log("MPM_DB: Room init failed: ${e.message}")
             }
 
-            sUsageRecordSocketServer = UsageRecordSocketServer(context.packageName)
+            val packageName = context.packageName
+            sUsageRecordSocketServer = UsageRecordSocketServer(packageName)
             sUsageRecordSocketServer?.start()
 
-            sCommandSocketServer = CommandSocketServer(context.packageName, service)
+            sCommandSocketServer = CommandSocketServer(packageName, service)
             sCommandSocketServer?.start()
         }
     }
@@ -209,11 +209,13 @@ abstract class ManagerService : IManagerService.Stub() {
                 try {
                     val socketName = "me.gm.cleaner.command.$pkg"
                     val serverSocket = LocalServerSocket(socketName)
+                    XposedBridge.log("MPM_Socket: CommandServer started at $socketName")
                     while (isRunning) {
                         val client = serverSocket.accept()
                         thread { handleClient(client) }
                     }
                 } catch (e: Throwable) {
+                    XposedBridge.log("MPM_Socket: CommandSocketServer failed on $pkg: ${e.message}")
                     isRunning = false
                 }
             }
@@ -221,13 +223,10 @@ abstract class ManagerService : IManagerService.Stub() {
 
         private fun handleClient(client: LocalSocket) {
             try {
-                // 使用 lineReader 以便快速响应单行指令，避免 readText() 导致的死锁
                 val reader = client.inputStream.bufferedReader()
                 val writer = client.outputStream.bufferedWriter()
-                
-                val input = reader.readLine()?.trim() // 修改此处
+                val input = reader.readLine()?.trim()
                 if (!input.isNullOrEmpty()) {
-                    XposedBridge.log("MPM_Socket: Received command [$input] in ${context.packageName}")
                     when {
                         input == "RELOAD_RULES" -> {
                             val success = sRuleSp?.reload() ?: false
@@ -249,8 +248,7 @@ abstract class ManagerService : IManagerService.Stub() {
                     }
                     writer.flush()
                 }
-            } catch (e: Throwable) {
-                XposedBridge.log("MPM_Socket: handleClient error: ${e.message}")
+            } catch (ignored: Throwable) {
             } finally {
                 try { client.close() } catch (ignored: Exception) {}
             }
@@ -267,11 +265,13 @@ abstract class ManagerService : IManagerService.Stub() {
                 try {
                     val socketName = "me.gm.cleaner.usage_record.$pkg"
                     val serverSocket = LocalServerSocket(socketName)
+                    XposedBridge.log("MPM_Socket: UsageServer started at $socketName")
                     while (isRunning) {
                         val client = serverSocket.accept()
                         clients.add(client)
                     }
                 } catch (e: Throwable) {
+                    XposedBridge.log("MPM_Socket: UsageRecordSocketServer failed on $pkg: ${e.message}")
                     isRunning = false
                 }
             }
