@@ -63,30 +63,33 @@ class Templates(json: String?) {
             var isReadOnly = false
             var isMediaTypeNotPermitted = false
 
+            // 1. 路径类规则（最高优先级，决定文件是否可见/可操作）
             for (template in activeTemplates) {
-                // 1. 过滤路径拦截
+                // 过滤路径拦截
                 if (template.filterPath?.any { data.startsWith(it, true) } == true) {
                     isFiltered = true
                 }
-                // 2. 只读路径拦截 (仅针对插入/写入操作)
+                // 只读路径拦截
                 if (isInsert && template.readOnlyPath?.any { data.startsWith(it, true) } == true) {
                     isReadOnly = true
                 }
             }
 
-            // 3. 媒体类型限制：仅当未被明确拦截时校验
+            // 2. 媒体类型限制（仅当文件未被上述路径规则拦截时才校验）
+            // 只有没有被拦截时，我们才去考虑它是否属于“媒体类型”的范畴
             if (!isFiltered && !isReadOnly) {
-                // 找到第一个设置了媒体类型限制的模板 (匹配即止)
                 val effectiveTemplate = activeTemplates.firstOrNull { it.permittedMediaTypes != null }
-                val permittedTypes = effectiveTemplate?.permittedMediaTypes
-                if (permittedTypes != null) {
+                if (effectiveTemplate != null) {
                     val currentType = MimeUtils.resolveMediaType(mimeType)
-                    if (currentType !in permittedTypes) {
+                    // 只有在定义了限制的情况下才判定：如果类型不在列表中，则拦截
+                    if (currentType !in effectiveTemplate.permittedMediaTypes!!) {
                         isMediaTypeNotPermitted = true
                     }
                 }
             }
 
+            // 只有路径导致的拦截会返回 true，媒体类型的限制通过逻辑解耦，
+            // 确保即使设置了 mediaType=None，只要没有配置 filterPath，它依然可以读取
             isFiltered || isReadOnly || isMediaTypeNotPermitted
         }
 }
