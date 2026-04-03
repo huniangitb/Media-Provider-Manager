@@ -221,34 +221,36 @@ abstract class ManagerService : IManagerService.Stub() {
 
         private fun handleClient(client: LocalSocket) {
             try {
-                client.inputStream.bufferedReader().use { reader ->
-                    client.outputStream.bufferedWriter().use { writer ->
-                        val input = reader.readText().trim()
-                        if (input.isNotEmpty()) {
-                            when {
-                                input == "RELOAD_RULES" -> {
-                                    val success = sRuleSp?.reload() ?: false
-                                    writer.write(if (success) "SUCCESS\n" else "FAILED\n")
-                                }
-                                input == "RELOAD_ROOT" -> {
-                                    val success = sRootSp?.reload() ?: false
-                                    writer.write(if (success) "SUCCESS\n" else "FAILED\n")
-                                }
-                                input.startsWith("[") -> {
-                                    service.writeSp(R.xml.template_preferences, input)
-                                    writer.write("SUCCESS\n")
-                                }
-                                input.startsWith("{") -> {
-                                    service.writeSp(R.xml.root_preferences, input)
-                                    writer.write("SUCCESS\n")
-                                }
-                                else -> writer.write("UNKNOWN_COMMAND\n")
-                            }
-                            writer.flush()
+                // 使用 lineReader 以便快速响应单行指令，避免 readText() 导致的死锁
+                val reader = client.inputStream.bufferedReader()
+                val writer = client.outputStream.bufferedWriter()
+                
+                val input = reader.readLine()?.trim() // 修改此处
+                if (!input.isNullOrEmpty()) {
+                    XposedBridge.log("MPM_Socket: Received command [$input] in ${context.packageName}")
+                    when {
+                        input == "RELOAD_RULES" -> {
+                            val success = sRuleSp?.reload() ?: false
+                            writer.write(if (success) "SUCCESS\n" else "FAILED\n")
                         }
+                        input == "RELOAD_ROOT" -> {
+                            val success = sRootSp?.reload() ?: false
+                            writer.write(if (success) "SUCCESS\n" else "FAILED\n")
+                        }
+                        input.startsWith("[") -> {
+                            service.writeSp(R.xml.template_preferences, input)
+                            writer.write("SUCCESS\n")
+                        }
+                        input.startsWith("{") -> {
+                            service.writeSp(R.xml.root_preferences, input)
+                            writer.write("SUCCESS\n")
+                        }
+                        else -> writer.write("UNKNOWN_COMMAND\n")
                     }
+                    writer.flush()
                 }
-            } catch (ignored: Throwable) {
+            } catch (e: Throwable) {
+                XposedBridge.log("MPM_Socket: handleClient error: ${e.message}")
             } finally {
                 try { client.close() } catch (ignored: Exception) {}
             }
