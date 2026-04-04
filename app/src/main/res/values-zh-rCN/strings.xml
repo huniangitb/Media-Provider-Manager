@@ -3,7 +3,6 @@
     <string name="app_name">媒体存储设备管理</string>
     <string name="description">防止媒体存储滥用</string>
 
-    
     <string name="module">模块</string>
     <string name="app_management">应用管理</string>
     <string name="usage_record">使用记录</string>
@@ -17,7 +16,6 @@
     <string name="playground">实验</string>
     <string name="about">关于</string>
 
-    
     <string name="guide_active">在 Xposed 框架中激活模块并重启系统才能使用此功能</string>
     <string name="not_active">未激活</string>
     <string name="restart_system">重启系统以升级模块</string>
@@ -36,7 +34,6 @@
     <string name="add_to_existing_template_title">添加到已有模板：%s</string>
     <string name="remove_from_template">从模板中移除此应用</string>
 
-    
     <string name="search">搜索</string>
     <string name="view">查看</string>
     <string name="sort_title">排序方式</string>
@@ -62,7 +59,6 @@
     <string name="menu_sort_by_size_title">大小</string>
     <string name="scan_external_storage">扫描外部存储空间中的所有文件</string>
 
-    
     <string name="global_header">全局</string>
     <string name="reject_nonstandard_dir_title">禁止创建不规范文件夹</string>
     <string name="reject_nonstandard_dir_summary">在 AOSP 中系统应用不会创建非标准文件夹，但是一些设备生产商修改了这一行为。</string>
@@ -76,10 +72,14 @@
     <string name="template_name_not_unique">模板名不唯一</string>
     <string name="hook_operation_title">挂钩操作</string>
     <string name="apply_to_app_title">应用到应用</string>
-    <string name="permitted_media_types_title">允许的媒体类型</string>
+    
+    <string name="enable_sandbox_title">开启沙盒拦截</string>
+    <string name="enable_sandbox_summary">开启后，默认拦截该应用所有的媒体存储记录与文件创建。可在下方配置豁免路径。</string>
+    <string name="exempt_path_title">豁免路径 (放行)</string>
+    <string name="exempt_path_dialog_title">编辑豁免路径列表</string>
+
     <string name="path_config_title">路径配置</string>
     
-    <string name="redirect_rules_key" translatable="false">redirect_rules</string>
     <string name="redirect_rules_title">重定向规则</string>
     <string name="redirect_rules_dialog_title">编辑重定向列表</string>
     <string name="redirect_rules_summary">已配置 %d 条重定向规则</string>
@@ -90,11 +90,9 @@
     <string name="source_path_hint">例如：/storage/emulated/0/Tencent/QQ/</string>
     <string name="target_path_hint">文件实际存放的绝对路径</string>
     
-    <string name="redirect_path_key">redirect_path</string>
     <string name="redirect_path_title">重定向至 (旧版)</string>
     <string name="redirect_path_summary">匹配的文件将被实际存储到此目录</string>
 
-    <string name="read_only_path_key" translatable="false">read_only_path</string>
     <string name="read_only_path_title">只读路径 (阻止写入)</string>
     <string name="read_only_path_dialog_title">编辑只读路径列表</string>
 
@@ -106,7 +104,6 @@
     <string name="not_set">未设置</string>
     <string name="quit_without_save">更改未保存，您确定要退出吗？</string>
 
-    
     <string name="today">今天</string>
     <string name="yesterday">昨天</string>
     <string name="rationale_shouldShowRationale">访问其它应用创建的媒体文件需要读取外部存储空间权限</string>
@@ -114,7 +111,6 @@
     <string name="revoke_self_permission">只显示自己的媒体文件需要撤销应用的读取外部存储空间权限，请在应用信息中手动撤销</string>
     <string name="unsupported_delete_in_bulk">安卓 Q 的媒体存储不支持批量删除</string>
 
-    
     <string name="playground_header">这里有一些关于媒体存储的实验，您可以通过它们了解媒体存储和测试模块功能。</string>
     <string name="no_wifi">当前没有连接到 wifi 网络，此实验将会消耗您的数据流量，是否继续？</string>
     <string name="start">开始</string>
@@ -127,9 +123,9 @@
 
     <string name="playground_title_intercept">拦截</string>
     <string name="intercept_insert_title">拦截插入</string>
-    <string name="intercept_insert_summary">首先编写拦截规则。在应用管理中找到本应用，点击创建模板，挂钩操作去掉查询，允许的媒体类型去掉图片。点击开始可以快速添加此规则。\n然后点击实验二的开始，切换到图片页面，观察是否能看到图片。最后用文件管理器打开 Pictures/MPM/，观察是否能看到图片。</string>
+    <string name="intercept_insert_summary">首先编写拦截规则。在应用管理中找到本应用，点击创建模板，挂钩操作去掉查询，并开启沙盒拦截。点击开始可以快速添加此规则。\n然后点击实验二的开始，切换到图片页面，观察是否能看到图片。最后用文件管理器打开 Pictures/MPM/，观察是否能看到图片。</string>
     <string name="intercept_download_manager_title">拦截下载管理程序</string>
     <string name="intercept_download_manager_summary">有时应用会先保存文件，然后再通知媒体存储。在这种情况下，我们只能拦截媒体存储对媒体文件的记录，而无法阻止保存文件。\n首先编写拦截规则。规则与上一个实验大致相同，只是应用到应用改为下载管理程序和媒体存储设备。点击开始可以快速添加此规则。\n然后点击实验一的开始，切换到图片页面，观察是否能看到图片。最后用文件管理器打开 Pictures/MPM/，观察是否能看到图片。</string>
     <string name="intercept_query_title">拦截查询</string>
-    <string name="intercept_query_summary">首先编写拦截规则。在应用管理中找到本应用，点击创建模板，挂钩操作去掉插入，允许的媒体类型去掉图片。点击开始可以快速添加此规则。\n然后切换到图片页面与文件页面，观察是否能看到图片。</string>
+    <string name="intercept_query_summary">首先编写拦截规则。在应用管理中找到本应用，点击创建模板，挂钩操作去掉插入，并开启沙盒拦截。点击开始可以快速添加此规则。\n然后切换到图片页面与文件页面，观察是否能看到图片。</string>
 </resources>

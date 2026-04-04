@@ -21,16 +21,21 @@
         app:key="@string/apply_to_app_key"
         app:title="@string/apply_to_app_title" />
 
-    <me.gm.cleaner.plugin.ui.module.settings.preference.RefinedMultiSelectListPreference
-        app:defaultValue="@array/media_types_entryValues"
-        app:dependency="@string/hook_operation_key"
-        app:entries="@array/media_types_entries"
-        app:entryValues="@array/media_types_entryValues"
+    <SwitchPreferenceCompat
         app:iconSpaceReserved="false"
-        app:key="@string/permitted_media_types_key"
-        app:title="@string/permitted_media_types_title" />
+        app:dependency="@string/hook_operation_key"
+        app:key="@string/enable_sandbox_key"
+        app:title="@string/enable_sandbox_title"
+        app:summary="@string/enable_sandbox_summary" />
 
     <androidx.preference.PreferenceCategory app:title="@string/path_config_title" app:iconSpaceReserved="false">
+        <me.gm.cleaner.plugin.ui.module.settings.preference.PathListPreference
+            app:dependency="@string/enable_sandbox_key"
+            app:iconSpaceReserved="false"
+            app:key="@string/exempt_path_key"
+            app:title="@string/exempt_path_title"
+            app:dialogTitle="@string/exempt_path_dialog_title" />
+
         <me.gm.cleaner.plugin.ui.module.settings.preference.PathListPreference
             app:dependency="@string/hook_operation_key"
             app:iconSpaceReserved="false"

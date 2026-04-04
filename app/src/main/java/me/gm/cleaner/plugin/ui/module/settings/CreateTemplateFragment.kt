@@ -17,6 +17,7 @@ import androidx.preference.EditTextPreference
 import androidx.preference.MultiSelectListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceManager
+import androidx.preference.SwitchPreferenceCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.transition.platform.MaterialContainerTransform
@@ -95,7 +96,6 @@ class CreateTemplateFragment : AbsSettingsFragment() {
                         ).show()
                         false
                     }
-
                     else -> {
                         lastTemplateName.putString(KEY_TEMPLATE_NAME, newValue)
                         true
@@ -118,19 +118,31 @@ class CreateTemplateFragment : AbsSettingsFragment() {
                 }
             }
 
-        args.permittedMediaTypes?.let {
-            val permittedMediaTypes = getString(R.string.permitted_media_types_key)
-            findPreference<RefinedMultiSelectListPreference>(permittedMediaTypes)
-                ?.values = it.toSet()
+        val enableSandboxPref = findPreference<SwitchPreferenceCompat>(getString(R.string.enable_sandbox_key))
+        if (enableSandboxPref != null) {
+            val tName = tempSp.getString(getString(R.string.template_name_key), NULL_TEMPLATE_NAME)
+            val template = try {
+                Templates(binderViewModel.readSp(R.xml.template_preferences)).values.find {
+                    it.templateName == (if (args.templateName != null) args.templateName else tName)
+                }
+            } catch (e: Exception) { null }
+
+            enableSandboxPref.isChecked = template?.enableSandbox == true
+            if (args.enableSandbox) {
+                enableSandboxPref.isChecked = true
+            }
+            
+            // 手动触发一次，以防初次加载时不触发依赖关系导致豁免路径变灰状态不更新
+            enableSandboxPref.onPreferenceChangeListener = Preference.OnPreferenceChangeListener { _, _ -> true }
         }
 
         val redirectRulesKey = getString(R.string.redirect_rules_key)
         val redirectPref = findPreference<RedirectRuleListPreference>(redirectRulesKey)
         if (redirectPref != null) {
-            val templateName = tempSp.getString(getString(R.string.template_name_key), NULL_TEMPLATE_NAME)
+            val tName = tempSp.getString(getString(R.string.template_name_key), NULL_TEMPLATE_NAME)
             val template = try {
                 Templates(binderViewModel.readSp(R.xml.template_preferences)).values.find {
-                    it.templateName == (if (args.templateName != null) args.templateName else templateName)
+                    it.templateName == (if (args.templateName != null) args.templateName else tName)
                 }
             } catch (e: Exception) { null }
 
@@ -138,10 +150,7 @@ class CreateTemplateFragment : AbsSettingsFragment() {
                 redirectPref.rules = template.redirectRules ?: emptyList()
             }
         }
-
-        redirectPref?.onPreferenceChangeListener = Preference.OnPreferenceChangeListener { _, newValue ->
-            true
-        }
+        redirectPref?.onPreferenceChangeListener = Preference.OnPreferenceChangeListener { _, _ -> true }
     }
 
     override fun onCreateView(
@@ -183,10 +192,8 @@ class CreateTemplateFragment : AbsSettingsFragment() {
         val f = when (preference) {
             is EditTextPreference -> MaterialEditTextPreferenceDialogFragmentCompat
                 .newInstance(preference.key)
-
             is MultiSelectListPreference -> MaterialMultiSelectListPreferenceDialogFragmentCompat
                 .newInstance(preference.key)
-
             is PathListPreference -> PathListPreferenceFragmentCompat.newInstance(preference.key)
             is RedirectRuleListPreference -> RedirectRuleListPreferenceFragmentCompat.newInstance(preference.key)
             else -> {
@@ -207,7 +214,9 @@ class CreateTemplateFragment : AbsSettingsFragment() {
         val templateName = tempSp.getString(getString(R.string.template_name_key), null)
         val hookOperationValues =
             findPreference<MultiSelectListPreference>(getString(R.string.hook_operation_key))?.values
+        val enableSandbox = findPreference<SwitchPreferenceCompat>(getString(R.string.enable_sandbox_key))?.isChecked == true
         val redirectRules = findPreference<RedirectRuleListPreference>(getString(R.string.redirect_rules_key))?.rules
+        val exemptPaths = findPreference<PathListPreference>(getString(R.string.exempt_path_key))?.values?.toList()
         val filterPaths = findPreference<PathListPreference>(getString(R.string.filter_path_key))?.values?.toList()
         val readOnlyPaths = findPreference<PathListPreference>(getString(R.string.read_only_path_key))?.values?.toList()
         
@@ -216,6 +225,8 @@ class CreateTemplateFragment : AbsSettingsFragment() {
             val newTemplate = baseTemplate.copy(
                 templateName = templateName,
                 hookOperation = hookOperationValues.toList(),
+                enableSandbox = enableSandbox,
+                exemptPath = exemptPaths,
                 filterPath = filterPaths,
                 readOnlyPath = readOnlyPaths,
                 redirectRules = redirectRules,
