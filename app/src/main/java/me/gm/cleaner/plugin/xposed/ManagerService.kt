@@ -209,13 +209,11 @@ abstract class ManagerService : IManagerService.Stub() {
                 try {
                     val socketName = "me.gm.cleaner.command.$pkg"
                     val serverSocket = LocalServerSocket(socketName)
-                    XposedBridge.log("MPM_Socket: CommandServer started at $socketName")
                     while (isRunning) {
                         val client = serverSocket.accept()
                         thread { handleClient(client) }
                     }
                 } catch (e: Throwable) {
-                    XposedBridge.log("MPM_Socket: CommandSocketServer failed on $pkg: ${e.message}")
                     isRunning = false
                 }
             }
@@ -265,13 +263,11 @@ abstract class ManagerService : IManagerService.Stub() {
                 try {
                     val socketName = "me.gm.cleaner.usage_record.$pkg"
                     val serverSocket = LocalServerSocket(socketName)
-                    XposedBridge.log("MPM_Socket: UsageServer started at $socketName")
                     while (isRunning) {
                         val client = serverSocket.accept()
                         clients.add(client)
                     }
                 } catch (e: Throwable) {
-                    XposedBridge.log("MPM_Socket: UsageRecordSocketServer failed on $pkg: ${e.message}")
                     isRunning = false
                 }
             }
@@ -279,15 +275,24 @@ abstract class ManagerService : IManagerService.Stub() {
 
         fun broadcast(record: MediaProviderRecord) {
             if (clients.isEmpty()) return
+            
+            // 为了让外部程序日志简洁，Socket 通讯只提取数组第一条数据
+            // 并通过 totalCount 字段告知外部程序实际操作了多少个文件
+            val displayData = record.data.take(1)
+            val displayMimeType = record.mimeType.take(1)
+            val displayIntercepted = record.intercepted.take(1)
+
             val json = JSONObject().apply {
                 put("timeMillis", record.timeMillis)
                 put("packageName", record.packageName)
                 put("match", record.match)
                 put("operation", record.operation)
-                put("data", JSONArray(record.data))
-                put("mimeType", JSONArray(record.mimeType))
-                put("intercepted", JSONArray(record.intercepted))
+                put("data", JSONArray(displayData))
+                put("mimeType", JSONArray(displayMimeType))
+                put("intercepted", JSONArray(displayIntercepted))
+                put("totalCount", record.data.size)
             }.toString() + "\n"
+            
             val bytes = json.toByteArray()
             clients.forEach { client ->
                 try {
