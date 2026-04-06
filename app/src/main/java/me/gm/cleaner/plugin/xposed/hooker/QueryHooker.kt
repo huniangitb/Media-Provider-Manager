@@ -21,6 +21,7 @@ import me.gm.cleaner.plugin.dao.MediaProviderOperation.Companion.OP_QUERY
 import me.gm.cleaner.plugin.dao.MediaProviderRecord
 import me.gm.cleaner.plugin.xposed.ManagerService
 import me.gm.cleaner.plugin.xposed.util.FilteredCursor
+import me.gm.cleaner.plugin.xposed.util.FileUtils
 import java.util.Optional
 import java.util.function.Consumer
 import java.util.function.Function
@@ -168,11 +169,10 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
         val mimeTypeColumn = c.getColumnIndex(FileColumns.MIME_TYPE)
         val dataList = mutableListOf<String>()
         val mimeTypeList = mutableListOf<String>()
-        while (c.moveToNext()) {
-            dataList += c.getString(dataColumn) ?: ""
-            mimeTypeList += if (mimeTypeColumn != -1) c.getString(mimeTypeColumn) ?: "" else ""
-        }
-
+        
+        // 提取重定向映射：
+        // Map<Target, Source>，即 数据库查到的实际路径 -> 应用期望看到的原始路径
+        // 注意遍历顺序，应用专属规则覆盖全局规则，长的 Target 路径覆盖短的
         val redirectionMap = mutableMapOf<String, String>()
         templates.values.reversed().forEach { template ->
             template.redirectRules?.forEach { rule ->
@@ -184,13 +184,34 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
                 }
             }
         }
-        
+
+        // 第一遍：遍历 Cursor 提取所有 Data 和 MimeType
+        // 同时根据重定向映射修改 dataList，让后续的权限校验逻辑处理的是"伪装后"的路径
+        while (c.moveToNext()) {
+            var data = c.getString(dataColumn) ?: ""
+            // 对查询结果应用重定向反向映射
+            if (redirectionMap.isNotEmpty() && data.isNotEmpty()) {
+                for ((realTarget, originalSource) in redirectionMap) {
+                    if (FileUtils.contains(realTarget, data)) {
+                        data = data.replaceFirst(realTarget, originalSource)
+                        break
+                    }
+                }
+            }
+            dataList += data
+            mimeTypeList += if (mimeTypeColumn != -1) c.getString(mimeTypeColumn) ?: "" else ""
+        }
+
+        // 用重定向映射包装 Cursor
         var wrappedCursor: Cursor = c
         if (redirectionMap.isNotEmpty()) {
             wrappedCursor = RedirectedCursor(c, redirectionMap)
         }
         
+        // 传递 isInsert=false 忽略 Query 时只读路径校验
+        // 这里传入的 dataList 已经是经过重定向映射回原路径的，确保应用的沙盒/隐藏规则基于原路径生效
         val shouldIntercept = templates.applyTemplates(dataList, mimeTypeList, isInsert = false)
+        
         if (shouldIntercept.any { it }) {
             wrappedCursor.moveToFirst()
             val filter = shouldIntercept
@@ -228,9 +249,9 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
         override fun getString(columnIndex: Int): String? {
             val value = super.getString(columnIndex)
             if (columnIndex == dataColumnIndex && value != null) {
-                for ((realPath, originalPath) in redirectMap) {
-                    if (value.startsWith(realPath, true)) {
-                        return value.replaceFirst(realPath, originalPath)
+                for ((realTarget, originalSource) in redirectMap) {
+                    if (FileUtils.contains(realTarget, value)) {
+                        return value.replaceFirst(realTarget, originalSource)
                     }
                 }
             }
@@ -249,7 +270,6 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
         }
         val start = queryArgs.getString(ContentResolver.QUERY_ARG_SQL_SELECTION)!!.toLong()
         val end = queryArgs.getString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER)!!.toLong()
-        // 增加安全调用 ?. 处理静态 dao 为空的情况
         return service.dao?.loadForTimeMillis(start, end, *table.map { it.toInt() }.toIntArray()) ?: MatrixCursor(arrayOf("empty"))
     }
 
