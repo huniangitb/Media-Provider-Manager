@@ -109,8 +109,7 @@ abstract class ManagerService : IManagerService.Stub() {
         } catch (ignored: Throwable) {}
     }
 
-    override fun packageUsageTimes(operation: Int, packageNames: List<String>) =
-        sDao?.packageUsageTimes(operation, *packageNames.toTypedArray()) ?: 0
+    override fun packageUsageTimes(operation: Int, packageNames: List<String>) = 0
 
     override fun registerMediaChangeObserver(observer: IMediaChangeObserver) {
         sObservers.register(observer)
@@ -207,7 +206,9 @@ abstract class ManagerService : IManagerService.Stub() {
             isRunning = true
             thread(name = "CommandServer-$pkg") {
                 try {
-                    val socketName = "me.gm.cleaner.command.$pkg"
+                    val userId = android.os.Process.myUid() / 100000
+                    val suffix = if (userId == 0) "" else "_$userId"
+                    val socketName = "me.gm.cleaner.command.$pkg$suffix"
                     val serverSocket = LocalServerSocket(socketName)
                     while (isRunning) {
                         val client = serverSocket.accept()
@@ -261,7 +262,9 @@ abstract class ManagerService : IManagerService.Stub() {
             isRunning = true
             thread(name = "UsageServer-$pkg") {
                 try {
-                    val socketName = "me.gm.cleaner.usage_record.$pkg"
+                    val userId = android.os.Process.myUid() / 100000
+                    val suffix = if (userId == 0) "" else "_$userId"
+                    val socketName = "me.gm.cleaner.usage_record.$pkg$suffix"
                     val serverSocket = LocalServerSocket(socketName)
                     while (isRunning) {
                         val client = serverSocket.accept()
@@ -276,8 +279,8 @@ abstract class ManagerService : IManagerService.Stub() {
         fun broadcast(record: MediaProviderRecord) {
             if (clients.isEmpty()) return
             
-            // 为了让外部程序日志简洁，Socket 通讯只提取数组第一条数据
-            // 并通过 totalCount 字段告知外部程序实际操作了多少个文件
+            
+            
             val displayData = record.data.take(1)
             val displayMimeType = record.mimeType.take(1)
             val displayIntercepted = record.intercepted.take(1)

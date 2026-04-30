@@ -1,19 +1,3 @@
-/*
- * Copyright 2021 Green Mushroom
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package me.gm.cleaner.plugin.ui.module.appmanagement
 
 import android.annotation.SuppressLint
@@ -35,9 +19,6 @@ import com.bumptech.glide.Glide
 import com.google.android.material.transition.platform.Hold
 import com.google.gson.Gson
 import me.gm.cleaner.plugin.R
-import me.gm.cleaner.plugin.dao.MediaProviderOperation.Companion.OP_DELETE
-import me.gm.cleaner.plugin.dao.MediaProviderOperation.Companion.OP_INSERT
-import me.gm.cleaner.plugin.dao.MediaProviderOperation.Companion.OP_QUERY
 import me.gm.cleaner.plugin.databinding.AppHeaderBinding
 import me.gm.cleaner.plugin.databinding.TemplatesHeaderBinding
 import me.gm.cleaner.plugin.databinding.TemplatesItemBinding
@@ -69,26 +50,7 @@ class AppHeaderAdapter(private val fragment: AppFragment) :
             }
             fragment.startActivity(intent)
         }
-        val usageTimes = arrayOf(
-            OP_QUERY to R.string.query_times,
-            OP_INSERT to R.string.insert_times,
-            OP_DELETE to R.string.delete_times,
-        ).mapNotNull { (op, resId) ->
-            val packageUsageTimes = fragment.binderViewModel.packageUsageTimes(
-                op, listOf(args.packageInfo.packageName)
-            )
-            if (packageUsageTimes == 0) {
-                null
-            } else {
-                fragment.getString(resId, packageUsageTimes)
-            }
-        }
-        if (usageTimes.isNotEmpty()) {
-            binding.usageTimes.isVisible = true
-            binding.usageTimes.text = usageTimes.joinToString(
-                fragment.getString(R.string.delimiter)
-            )
-        }
+        binding.usageTimes.isVisible = false
     }
 
     override fun getItemCount(): Int = 1

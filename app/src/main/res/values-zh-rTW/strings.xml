@@ -21,9 +21,6 @@
     <string name="restart_system">重啟系統以升級模組</string>
     <string name="active">已啟動</string>
     <string name="enabled_rule_count">已啟用 %d 條規則</string>
-    <string name="query_times">查詢 %d 次</string>
-    <string name="insert_times">插入 %d 次</string>
-    <string name="delete_times">刪除 %d 次</string>
     <string name="delimiter">、</string>
     <string name="app_info">應用訊息</string>
     <string name="queried_at">查詢於\ </string>
@@ -78,15 +75,30 @@
     <string name="exempt_path_title">豁免路徑 (放行)</string>
     <string name="exempt_path_dialog_title">編輯豁免路徑列表</string>
 
-    <string name="filter_path_title">過濾路徑</string>
+    <string name="path_config_title">路徑配置</string>
+
+    <string name="redirect_rules_title">重定向規則</string>
+    <string name="redirect_rules_dialog_title">編輯重定向列表</string>
+    <string name="redirect_rules_summary">已配置 %d 條重定向規則</string>
+    <string name="add_redirect_rule">新增重定向規則</string>
+    <string name="edit_redirect_rule">編輯重定向規則</string>
+    <string name="source_path_title">原始路徑 (App 視角)</string>
+    <string name="target_path_title">目標路徑 (實際儲存位置)</string>
+    <string name="source_path_hint">例如：/storage/emulated/0/Tencent/QQ/</string>
+    <string name="target_path_hint">檔案實際存放的絕對路徑</string>
+
+    <string name="redirect_path_title">重定向至 (舊版)</string>
+    <string name="redirect_path_summary">匹配的檔案將被實際儲存到此目錄</string>
 
     <string name="read_only_path_title">唯讀路徑 (阻止寫入)</string>
     <string name="read_only_path_dialog_title">編輯唯讀路徑列表</string>
 
+    <string name="filter_path_title">過濾路徑 (攔截/隱藏)</string>
+    <string name="filter_path_dialog_title">編輯過濾路徑列表</string>
+
     <string name="add_path">新增路徑</string>
-    <string name="redirect_path_title">重定向至</string>
-    <string name="redirect_path_summary">匹配的文件將被實際存儲到此目錄</string>
     <string name="save">儲存</string>
+    <string name="not_set">未設定</string>
     <string name="quit_without_save">更改未儲存，您確定要退出嗎？</string>
 
     <string name="today">今天</string>
@@ -112,5 +124,5 @@
     <string name="intercept_download_manager_title">攔截下載管理程序</string>
     <string name="intercept_download_manager_summary">有時應用會先保存文件，然後再通知媒體儲存。在這種情況下，我們只能攔截媒體儲存對媒體檔案的紀錄，而無法阻止保存文件。\n首先編寫攔截規則。規則與上一個實驗大致相同，只是應用到應用改為下載管理程序和媒體儲存設備。點擊開始可以快速添加此規則。\n然後點擊實驗一的開始，切換到圖片頁面，觀察是否能看到圖片。最後用檔案管理器打開 Pictures/MPM/，觀察是否能看到圖片。</string>
     <string name="intercept_query_title">攔截查詢</string>
-    <string name="intercept_query_summary">首先編寫攔截規則。在應用管理中找到本應用，點擊創建模板，掛鉤操作去掉插入，並開啟沙盒攔截。點擊開始可以快速添加此規則。\n然後切換到圖片頁面與文件頁面，觀察是否能看到圖片。</string>
+    <string name="intercept_query_summary">首先編寫攔截規則。在應用管理中找到本應用，點擊創建模板，掛鉤操作去掉插入，并開啟沙盒攔截。點擊開始可以快速添加此規則。\n然後切換到圖片頁面與文件頁面，觀察是否能看到圖片。</string>
 </resources>
