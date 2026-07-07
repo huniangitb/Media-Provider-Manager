@@ -164,4 +164,45 @@
     <string name="empty_search_hint">Try another keyword or refresh the list.</string>
     <string name="delete_template_title">Delete template</string>
     <string name="delete_template_message">Delete template "%1$s"?</string>
+
+    <!-- Remote Config -->
+    <string name="remote_config_title">Remote Config</string>
+    <string name="remote_connection_status">Connection Status</string>
+    <string name="remote_pulling">Pulling…</string>
+    <string name="remote_retrying">Retrying…</string>
+    <string name="remote_connected">Connected</string>
+    <string name="remote_disconnected">Disconnected</string>
+    <string name="remote_last_pull">Last Pull</string>
+    <string name="remote_templates">Templates</string>
+    <string name="remote_debug_logs">Debug Logs</string>
+    <string name="remote_retry">Retry</string>
+    <string name="remote_retry_active">Active (every 5s)</string>
+    <string name="remote_error">Error</string>
+    <string name="remote_pull_now">Pull Now</string>
+    <string name="remote_templates_section">Remote Templates (Read Only)</string>
+    <string name="remote_templates_pulled">%d template(s) pulled from injector</string>
+    <string name="remote_no_templates">No templates from remote</string>
+    <string name="remote_no_connection">No connection</string>
+    <string name="remote_debug_log">Debug Log</string>
+    <string name="remote_log_entries">%d entries</string>
+    <string name="remote_no_logs">(no logs)</string>
+    <string name="remote_never">Never</string>
+    <string name="remote_template_operations">Operations: %s</string>
+    <string name="remote_template_apps">Apps: %s</string>
+    <string name="remote_template_filter_paths">Filter paths: %s</string>
+    <string name="remote_template_readonly_paths">Read-only paths: %s</string>
+    <string name="remote_template_redirects">Redirects: %d rule(s)</string>
+    <string name="remote_template_source">Source: %s</string>
+    <string name="remote_template_sandbox">Sandbox: Enabled</string>
+    <string name="remote_template_all_apps">All applications</string>
+    <string name="remote_template_redirect_item">%s → %s</string>
+    <string name="enable_sandbox_title">Sandbox Mode</string>
+    <string name="enable_sandbox_summary">Allow all media types when enabled</string>
+    <string name="read_only_path_title">Read-Only Paths</string>
+    <string name="redirect_rules_title">Redirect Rules</string>
+    <string name="remote_subscription">Subscription</string>
+    <string name="remote_subscription_active">Active (auto-push)</string>
+    <string name="remote_subscribed">Auto-subscribed</string>
+    <string name="settings_remote_config">Remote Config</string>
+    <string name="settings_remote_config_summary">View remote pulled config &amp; connection status</string>
 </resources>

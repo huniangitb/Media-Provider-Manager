@@ -185,6 +185,25 @@ class BinderViewModel @Inject constructor(
     fun writeRootSp(what: String) = writeSp(ROOT_PREFERENCES, what)
     fun writeTemplateSp(what: String) = writeSp(TEMPLATE_PREFERENCES, what)
 
+    // ----- 远程配置接口 -----
+
+    fun readRemoteSp(): String? =
+        serviceCall("readRemoteSp") { readRemoteSp() }
+
+    fun writeRemoteSp(what: String) {
+        // 远程配置只读，写入静默忽略（由服务端 enforce）
+        serviceCall("writeRemoteSp") { writeRemoteSp(what); true }
+    }
+
+    fun triggerRemotePull(): Boolean =
+        serviceCall("triggerRemotePull") { triggerRemotePull() } ?: false
+
+    fun getRemoteConfigStatus(): String? =
+        serviceCall("getRemoteConfigStatus") { getRemoteConfigStatus() }
+
+    fun getRemoteConfigLogs(): String? =
+        serviceCall("getRemoteConfigLogs") { getRemoteConfigLogs() }
+
     fun clearAllTables() {
         serviceCall("clearAllTables") {
             clearAllTables()

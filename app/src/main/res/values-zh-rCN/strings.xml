@@ -132,4 +132,45 @@
     <string name="empty_search_hint">请尝试其他关键字，或刷新列表。</string>
     <string name="delete_template_title">删除模板</string>
     <string name="delete_template_message">确定删除模板“%1$s”吗？</string>
+
+    <!-- 远程配置 -->
+    <string name="remote_config_title">远程配置</string>
+    <string name="remote_connection_status">连接状态</string>
+    <string name="remote_pulling">拉取中…</string>
+    <string name="remote_retrying">重试中…</string>
+    <string name="remote_connected">已连接</string>
+    <string name="remote_disconnected">未连接</string>
+    <string name="remote_last_pull">上次拉取</string>
+    <string name="remote_templates">模板</string>
+    <string name="remote_debug_logs">调试日志</string>
+    <string name="remote_retry">重试</string>
+    <string name="remote_retry_active">活跃中（每5秒）</string>
+    <string name="remote_error">错误</string>
+    <string name="remote_pull_now">立即拉取</string>
+    <string name="remote_templates_section">远程模板（只读）</string>
+    <string name="remote_templates_pulled">从注入器拉取 %d 个模板</string>
+    <string name="remote_no_templates">远程没有模板</string>
+    <string name="remote_no_connection">无连接</string>
+    <string name="remote_debug_log">调试日志</string>
+    <string name="remote_log_entries">%d 条</string>
+    <string name="remote_no_logs">（无日志）</string>
+    <string name="remote_never">从未</string>
+    <string name="remote_template_operations">操作：%s</string>
+    <string name="remote_template_apps">应用：%s</string>
+    <string name="remote_template_filter_paths">过滤路径：%s</string>
+    <string name="remote_template_readonly_paths">只读路径：%s</string>
+    <string name="remote_template_redirects">重定向：%d 条规则</string>
+    <string name="remote_template_source">来源：%s</string>
+    <string name="remote_template_sandbox">沙盒：已启用</string>
+    <string name="remote_template_all_apps">所有应用</string>
+    <string name="remote_template_redirect_item">%s → %s</string>
+    <string name="enable_sandbox_title">沙盒模式</string>
+    <string name="enable_sandbox_summary">启用时放行所有媒体类型</string>
+    <string name="read_only_path_title">只读路径</string>
+    <string name="redirect_rules_title">重定向规则</string>
+    <string name="remote_subscription">订阅</string>
+    <string name="remote_subscription_active">活跃中（自动推送）</string>
+    <string name="remote_subscribed">已订阅自动推送</string>
+    <string name="settings_remote_config">远程配置</string>
+    <string name="settings_remote_config_summary">查看远程拉取的配置与连接状态</string>
 </resources>

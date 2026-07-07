@@ -32,9 +32,12 @@ import me.gm.cleaner.plugin.dao.MediaProviderRecordDao
 import me.gm.cleaner.plugin.dao.MediaProviderRecordDatabase
 import me.gm.cleaner.plugin.model.ParceledListSlice
 import me.gm.cleaner.plugin.model.SpIdentifiers
+import me.gm.cleaner.plugin.model.Templates
 import java.io.File
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
+import org.json.JSONArray
+import org.json.JSONObject
 
 abstract class ManagerService : IManagerService.Stub() {
     lateinit var classLoader: ClassLoader
@@ -49,6 +52,11 @@ abstract class ManagerService : IManagerService.Stub() {
     private val observers = RemoteCallbackList<IMediaChangeObserver>()
     val rootSp by lazy { JsonFileSpImpl(File(context.filesDir, "root")) }
     val ruleSp by lazy { TemplatesJsonFileSpImpl(File(context.filesDir, "rule")) }
+
+    // 远程配置 —— 只读，优先级最低
+    private var remoteSp: JsonFileSpImpl? = null
+    private var remoteConfigFetcher: RemoteConfigFetcher? = null
+    private var configSubscriptionManager: ConfigSubscriptionManager? = null
 
     private var appUid: Int = -1
 
@@ -87,6 +95,9 @@ abstract class ManagerService : IManagerService.Stub() {
                 }
             }
         }
+
+        // 初始化远程配置
+        initRemoteConfig()
     }
     
     /**
@@ -105,8 +116,107 @@ abstract class ManagerService : IManagerService.Stub() {
         handlerThread?.quitSafely()
         handlerThread = null
         
+        // 清理远程配置重试线程
+        remoteConfigFetcher?.stop()
+
+        // 停止订阅
+        configSubscriptionManager?.stop()
+
         // Clear observers
         observers.kill()
+    }
+
+    // ==================== 远程配置 ====================
+
+    /**
+     * 初始化远程配置子系统。
+     * 创建独立文件用于持久化远程配置，从文件恢复已拉取内容。
+     */
+    private fun initRemoteConfig() {
+        RemoteConfigLogBuffer.log("=== initRemoteConfig ===")
+        val remoteFile = File(context.filesDir, "rule_remote")
+        RemoteConfigLogBuffer.log("Remote config file: ${remoteFile.absolutePath}")
+        remoteSp = JsonFileSpImpl(remoteFile).also { sp ->
+            sp.read()
+            RemoteConfigLogBuffer.log("remoteSp initialized, size=${sp.file.length()}")
+        }
+        val fetcher = RemoteConfigFetcher(remoteFile).also {
+            it.restoreFromFile()
+        }
+        remoteConfigFetcher = fetcher
+
+        RemoteConfigLogBuffer.log("RemoteConfig initialized, cached templates: ${fetcher.cachedTemplates.size}")
+
+        // 初始合并：让 hookers 能看到已缓存的远程模板（包含空清空场景）
+        ruleSp.templates = Templates(ruleSp.read(), remoteValues = fetcher.cachedTemplates)
+
+        // 启动订阅（JNI 可用时自动启用，免手动拉取）
+        configSubscriptionManager = ConfigSubscriptionManager(remoteFile) {
+            ruleSp.templates.clearCache()
+            remoteSp?.invalidateCache()
+            // 订阅更新时同步远程模板到 ruleSp.templates，供 hookers 使用
+            ruleSp.templates = Templates(ruleSp.read(),
+                remoteValues = ConfigSubscriptionManager.cachedTemplates)
+        }.also { it.start() }
+    }
+
+    /**
+     * 合并本地配置与远程配置，返回 JSON 字符串。
+     *
+     * 合并规则（优先级：本地 > 远程）：
+     * 1. 以远程模板为基座
+     * 2. 本地模板覆盖同名模板（template_name 作为合并键）
+     * 3. 仅存在于本地的模板追加到末尾
+     */
+    private fun mergeTemplates(localJson: String?, remoteJson: String?): String {
+        // 没有远程配置时直接返回本地
+        if (remoteJson.isNullOrBlank()) return localJson ?: "[]"
+
+        val localArray = try {
+            JSONArray(localJson ?: "[]")
+        } catch (e: Exception) {
+            JSONArray()
+        }
+        val remoteArray = try {
+            JSONArray(remoteJson)
+        } catch (e: Exception) {
+            JSONArray()
+        }
+
+        // 建立 template_name → 本地模板 的索引
+        val localByName = mutableMapOf<String, JSONObject>()
+        for (i in 0 until localArray.length()) {
+            val obj = localArray.optJSONObject(i) ?: continue
+            val name = obj.optString("template_name")
+            if (name.isNotEmpty()) localByName[name] = obj
+        }
+
+        // 构建合并结果：以远程为基，同名的被本地覆盖
+        val merged = JSONArray()
+        val seenNames = mutableSetOf<String>()
+
+        for (i in 0 until remoteArray.length()) {
+            val remoteObj = remoteArray.optJSONObject(i) ?: continue
+            val name = remoteObj.optString("template_name")
+            if (name.isEmpty()) continue
+
+            if (localByName.containsKey(name)) {
+                // 本地存在同名模板 → 用本地方覆盖远程
+                merged.put(localByName[name]!!)
+                localByName.remove(name)
+            } else {
+                // 仅远程 → 直接使用
+                merged.put(remoteObj)
+            }
+            seenNames.add(name)
+        }
+
+        // 追加仅在本地存在的模板
+        for (entry in localByName) {
+            merged.put(entry.value)
+        }
+
+        return merged.toString()
     }
     
     /**
@@ -236,7 +346,12 @@ abstract class ManagerService : IManagerService.Stub() {
         enforceCallerPermission()
         return when (who) {
             SpIdentifiers.ROOT_PREFERENCES -> rootSp.read()
-            SpIdentifiers.TEMPLATE_PREFERENCES -> ruleSp.read()
+            SpIdentifiers.TEMPLATE_PREFERENCES -> {
+                val local = ruleSp.read()
+                val remote = remoteSp?.read()
+                if (remote.isNullOrBlank()) local else mergeTemplates(local, remote)
+            }
+            SpIdentifiers.REMOTE_PREFERENCES -> remoteSp?.read()
             else -> null
         }
     }
@@ -245,8 +360,80 @@ abstract class ManagerService : IManagerService.Stub() {
         enforceCallerPermission()
         when (who) {
             SpIdentifiers.ROOT_PREFERENCES -> rootSp.write(what)
-            SpIdentifiers.TEMPLATE_PREFERENCES -> ruleSp.write(what)
+            SpIdentifiers.TEMPLATE_PREFERENCES -> {
+                ruleSp.write(what)
+                // 本地写入后重建 ruleSp.templates，保留远程合并
+                ruleSp.templates = Templates(ruleSp.read(),
+                    remoteValues = remoteConfigFetcher?.cachedTemplates
+                        ?: ConfigSubscriptionManager.cachedTemplates)
+            }
+            SpIdentifiers.REMOTE_PREFERENCES -> {
+                // 远程配置只读，静默忽略写入
+                me.gm.cleaner.plugin.util.L.d("ManagerService", "writeSp(REMOTE) ignored — read-only")
+            }
         }
+    }
+
+    // ----- 远程配置接口 -----
+
+    override fun readRemoteSp(): String? {
+        enforceCallerPermission()
+        return remoteSp?.read()
+    }
+
+    override fun writeRemoteSp(what: String) {
+        enforceCallerPermission()
+        // 远程配置只读，静默忽略
+        me.gm.cleaner.plugin.util.L.d("ManagerService", "writeRemoteSp ignored — read-only")
+    }
+
+    override fun triggerRemotePull(): Boolean {
+        enforceCallerPermission()
+        RemoteConfigLogBuffer.log("=== triggerRemotePull called from client ===")
+        val fetcher = remoteConfigFetcher
+        if (fetcher == null) {
+            RemoteConfigLogBuffer.log("ERROR: remoteConfigFetcher not initialized")
+            return false
+        }
+        RemoteConfigLogBuffer.log("Cached before pull: ${fetcher.cachedTemplates.size} templates, " +
+                "lastPull=${fetcher.lastPullTimestamp}, error=${fetcher.lastError}")
+        val success = fetcher.pull()
+        if (success) {
+            // 拉取后使 ruleSp 的 Templates 缓存失效，下次查询重新 merge
+            RemoteConfigLogBuffer.log("Pull succeeded, clearing Template cache for re-merge")
+            ruleSp.templates.clearCache()
+            remoteSp?.invalidateCache()
+            ruleSp.templates = Templates(ruleSp.read(),
+                remoteValues = fetcher.cachedTemplates)
+            RemoteConfigLogBuffer.log("Merged config will include ${fetcher.cachedTemplates.size} remote templates")
+        } else {
+            RemoteConfigLogBuffer.log("Pull failed, retry scheduled automatically")
+        }
+        RemoteConfigLogBuffer.log("=== triggerRemotePull end → $success ===")
+        return success
+    }
+
+    override fun getRemoteConfigStatus(): String? {
+        enforceCallerPermission()
+        val fetcher = remoteConfigFetcher ?: return """{"lastPull":0,"error":"not initialized","templateCount":0}"""
+        val subscribed = configSubscriptionManager?.isSubscribed == true
+        val status = JSONObject().apply {
+            put("lastPull", if (subscribed) ConfigSubscriptionManager.lastPullTimestamp
+                           else fetcher.lastPullTimestamp)
+            put("error", if (subscribed) ConfigSubscriptionManager.lastError
+                         else fetcher.lastError ?: JSONObject.NULL)
+            put("templateCount", if (subscribed) ConfigSubscriptionManager.cachedTemplates.size
+                                 else fetcher.cachedTemplates.size)
+            put("logCount", RemoteConfigLogBuffer.size())
+            put("isRetrying", fetcher.isRetrying)
+            put("isSubscribed", subscribed)
+        }
+        return status.toString()
+    }
+
+    override fun getRemoteConfigLogs(): String? {
+        enforceCallerPermission()
+        return RemoteConfigLogBuffer.toJson(100)
     }
 
     override fun clearAllTables() {

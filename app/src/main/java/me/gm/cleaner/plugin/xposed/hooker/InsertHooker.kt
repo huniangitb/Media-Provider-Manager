@@ -114,6 +114,25 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
             .applyTemplates(filteredTemplates, listOf(data), listOf(mimeType)).first()
         if (shouldIntercept) {
             param.result = null
+            return
+        }
+
+        // 只读路径检查：若 data 在 readOnlyPaths 中则拒绝写入
+        if (!data.isNullOrEmpty()) {
+            try {
+                if (service.ruleSp.templates.isReadOnlyPath(data)) {
+                    param.result = null
+                    return
+                }
+            } catch (_: Exception) {}
+
+            // 重定向：若 data 匹配 redirect_rules.source，改写 values[DATA] 为 target
+            try {
+                val redirectData = service.ruleSp.templates.resolveRedirect(data)
+                if (redirectData != data) {
+                    values.put(MediaStore.MediaColumns.DATA, redirectData)
+                }
+            } catch (_: Exception) {}
         }
 
         /** RECORD - use async insert */

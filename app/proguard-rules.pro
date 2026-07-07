@@ -13,6 +13,11 @@
     *;
 }
 
+# JNI 回调接口 —— 保留类与方法名，确保 nsp_bridge.c 中 FindClass 能定位
+-keep class me.gm.cleaner.plugin.xposed.OnConfigUpdateListener {
+    *;
+}
+
 -assumenosideeffects class kotlin.jvm.internal.Intrinsics {
 	public static void check*(...);
 	public static void throw*(...);

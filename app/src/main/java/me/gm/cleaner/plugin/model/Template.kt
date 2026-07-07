@@ -31,16 +31,41 @@ data class Template(
     @field:SerializedName("apply_to_app") val applyToApp: List<String>?,
     @field:SerializedName("permitted_media_types") val permittedMediaTypes: List<Int>?,
     @field:SerializedName("filter_path") val filterPath: List<String>?,
+    // 沙盒占位符：字段存在但无实际功能
+    @field:SerializedName("enable_sandbox") val enableSandbox: Boolean = false,
+    // 只读路径列表，匹配的文件/目录不可写入（远程配置专用）
+    @field:SerializedName("read_only_path") val readOnlyPaths: List<String>? = null,
+    // 重定向规则：source → target 路径映射
+    @field:SerializedName("redirect_rules") val redirectRules: List<RedirectRule>? = null,
+    // 配置来源标记："local" 或 "remote"，不参与序列化
+    @Transient val source: String = "local",
 ) {
     companion object {
         val GSON: Gson = Gson()
     }
+
+    data class RedirectRule(
+        @field:SerializedName("source") val source: String,
+        @field:SerializedName("target") val target: String,
+    )
 }
 
-class Templates(json: String?) {
+class Templates(json: String?, private val remoteValues: List<Template> = emptyList()) {
     private val _values = mutableListOf<Template>()
     val values: List<Template>
         get() = _values
+
+    /** 本地 + 远程（优先级：本地 > 远程，同名去重） */
+    private val mergedValues: List<Template> by lazy {
+        _values.toMutableList().apply {
+            val localNames = _values.map { it.templateName }.toSet()
+            for (rt in remoteValues) {
+                if (rt.templateName !in localNames) {
+                    add(rt.copy(source = "remote"))
+                }
+            }
+        }
+    }
 
     // Thread-safe cache for filtered templates by (operation, packageName)
     // Use LRU-style cache to prevent unbounded memory growth
@@ -79,9 +104,9 @@ class Templates(json: String?) {
         
         // Get or compute value
         val result = filteredCache.getOrPut(cacheKey) {
-            _values.filter { template ->
+            mergedValues.filter { template ->
                 template.hookOperation.contains(operation) &&
-                        template.applyToApp?.contains(packageName) == true
+                        template.applyToApp?.let { "*" in it || it.contains(packageName) } == true
             }
         }
         
@@ -110,15 +135,78 @@ class Templates(json: String?) {
         }
     }
 
+    /**
+     * 将远程配置中的相对路径解析为绝对路径。
+     * 远程配置的路径是相对于存储根目录的（如 /DataBackup），
+     * 需要转换为 /storage/emulated/0/DataBackup 才能匹配系统操作路径。
+     * 支持 /storage/emulated/?/ 任意用户 ID 前缀。
+     */
+    private val storagePathRegex = Regex("^/storage/emulated/\\d+(/|$)")
+
+    private fun resolvePath(path: String): String {
+        // 已包含 /storage/emulated/{userId}/ 前缀 → 已经是绝对路径
+        if (storagePathRegex.containsMatchIn(path)) return path
+        val storageRoot = FileUtils.externalStorageDirPath
+        return "${storageRoot.trimEnd('/')}/${path.trimStart('/')}"
+    }
+
     fun applyTemplates(
         templates: List<Template>, dataList: List<String>, mimeTypeList: List<String>
     ): List<Boolean> =
         dataList.zip(mimeTypeList).map { (data, mimeType) ->
             templates.any { template ->
                 val permittedTypes = template.permittedMediaTypes
-                (permittedTypes != null && permittedTypes.isNotEmpty() &&
+                // enable_sandbox=true 且 permittedMediaTypes 为空/未设置时，放行所有类型
+                val isSandboxPass = template.enableSandbox &&
+                        (permittedTypes.isNullOrEmpty())
+                (!isSandboxPass && permittedTypes != null && permittedTypes.isNotEmpty() &&
                         MimeUtils.resolveMediaType(mimeType) !in permittedTypes) ||
-                        template.filterPath?.any { FileUtils.contains(it, data) } == true
+                        template.filterPath?.any { FileUtils.contains(resolvePath(it), data) } == true
             }
         }
+
+    /**
+     * 检查 [path] 是否在任一模板的 readOnlyPaths 中。
+     * 仅检查 readOnlyPaths 非空的模板。
+     */
+    fun isReadOnlyPath(path: String): Boolean {
+        return mergedValues.any { t ->
+            t.readOnlyPaths?.any { FileUtils.contains(resolvePath(it), path) } == true
+        }
+    }
+
+    /**
+     * 解析路径重定向：如果 [path] 匹配任一模板 redirectRules 的 source，
+     * 返回替换后的 target 路径；否则返回原路径。
+     * source/target 均为相对路径，需解析为绝对路径后再匹配。
+     */
+    fun resolveRedirect(path: String): String {
+        for (t in mergedValues) {
+            val rules = t.redirectRules ?: continue
+            for (rule in rules) {
+                val absSource = resolvePath(rule.source)
+                if (path.startsWith(absSource)) {
+                    return resolvePath(rule.target) + path.substring(absSource.length)
+                }
+            }
+        }
+        return path
+    }
+
+    /**
+     * 反转重定向：将 [path] 中匹配 target 前缀的部分替换为 source 前缀。
+     * 用于查询结果中 _data 列的路径重写，让应用看到的是 source 路径。
+     */
+    fun reverseRedirect(path: String): String {
+        for (t in mergedValues) {
+            val rules = t.redirectRules ?: continue
+            for (rule in rules) {
+                val absTarget = resolvePath(rule.target)
+                if (path.startsWith(absTarget)) {
+                    return resolvePath(rule.source) + path.substring(absTarget.length)
+                }
+            }
+        }
+        return path
+    }
 }

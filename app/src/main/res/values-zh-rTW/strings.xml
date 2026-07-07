@@ -112,4 +112,45 @@
     <string name="hide_system_apps">隱藏系統應用</string>
     <string name="module_activated">模組已啟動，請重啟對應作用域以生效。</string>
     <string name="restart_scope_hint">已在框架中啟動模組，請重啟作用域應用（如：媒體儲存設備）以生效。</string>
+
+    <!-- 遠端設定 -->
+    <string name="remote_config_title">遠端設定</string>
+    <string name="remote_connection_status">連線狀態</string>
+    <string name="remote_pulling">拉取中…</string>
+    <string name="remote_retrying">重試中…</string>
+    <string name="remote_connected">已連線</string>
+    <string name="remote_disconnected">未連線</string>
+    <string name="remote_last_pull">上次拉取</string>
+    <string name="remote_templates">範本</string>
+    <string name="remote_debug_logs">偵錯日誌</string>
+    <string name="remote_retry">重試</string>
+    <string name="remote_retry_active">活躍中（每5秒）</string>
+    <string name="remote_error">錯誤</string>
+    <string name="remote_pull_now">立即拉取</string>
+    <string name="remote_templates_section">遠端範本（唯讀）</string>
+    <string name="remote_templates_pulled">從注入器拉取 %d 個範本</string>
+    <string name="remote_no_templates">遠端沒有範本</string>
+    <string name="remote_no_connection">無連線</string>
+    <string name="remote_debug_log">偵錯日誌</string>
+    <string name="remote_log_entries">%d 條</string>
+    <string name="remote_no_logs">（無日誌）</string>
+    <string name="remote_never">從未</string>
+    <string name="remote_template_operations">操作：%s</string>
+    <string name="remote_template_apps">應用：%s</string>
+    <string name="remote_template_filter_paths">過濾路徑：%s</string>
+    <string name="remote_template_readonly_paths">唯讀路徑：%s</string>
+    <string name="remote_template_redirects">重新導向：%d 條規則</string>
+    <string name="remote_template_source">來源：%s</string>
+    <string name="remote_template_sandbox">沙盒：已啟用</string>
+    <string name="remote_template_all_apps">所有應用</string>
+    <string name="remote_template_redirect_item">%s → %s</string>
+    <string name="enable_sandbox_title">沙盒模式</string>
+    <string name="enable_sandbox_summary">啟用時放行所有媒體類型</string>
+    <string name="read_only_path_title">唯讀路徑</string>
+    <string name="redirect_rules_title">重新導向規則</string>
+    <string name="remote_subscription">訂閱</string>
+    <string name="remote_subscription_active">活躍中（自動推送）</string>
+    <string name="remote_subscribed">已訂閱自動推送</string>
+    <string name="settings_remote_config">遠端設定</string>
+    <string name="settings_remote_config_summary">檢視遠端拉取的設定與連線狀態</string>
 </resources>
