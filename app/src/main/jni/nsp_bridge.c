@@ -432,15 +432,71 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
     }
 
     // 4) Loop: poll + recv → process → callback
+    int consecutive_timeouts = 0;
+#define MAX_CONSECUTIVE_TIMEOUTS 15   /* 15 × 2000ms = 30s silence → reconnect */
+
     while (g_subscribe_running) {
         struct pollfd pfd;
         memset(&pfd, 0, sizeof(pfd));
         pfd.fd = sock; pfd.events = POLLIN;
         int pr = poll(&pfd, 1, 2000);
         if (pr <= 0) {
-            if (g_subscribe_running) continue;  // timeout, loop
-            break;
+            if (!g_subscribe_running) break;  // stopped
+            consecutive_timeouts++;
+            if (consecutive_timeouts < MAX_CONSECUTIVE_TIMEOUTS) continue;  // still waiting
+
+            // Too many consecutive timeouts → injector likely gone; reconnect
+            LOGD("subscribe: %d consecutive timeouts, reconnecting...", consecutive_timeouts);
+            consecutive_timeouts = 0;
+            close(sock);
+
+            sock = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+            if (sock < 0) { LOGE("subscribe reconnect socket failed"); g_subscribe_running = 0; return; }
+
+            memset(&local, 0, sizeof(local));
+            local.sun_family = AF_UNIX;
+            local.sun_path[0] = '\0';
+            snprintf(local.sun_path + 1, sizeof(local.sun_path) - 2, "nsp_sub_%d", getpid());
+            local_len = offsetof(struct sockaddr_un, sun_path) + 1 + strlen(local.sun_path + 1);
+            if (bind(sock, (struct sockaddr *)&local, local_len) < 0) {
+                LOGE("subscribe reconnect bind failed"); close(sock); g_subscribe_running = 0; return;
+            }
+
+            memset(&dest, 0, sizeof(dest));
+            dest.sun_family = AF_UNIX;
+            dest.sun_path[0] = '\0';
+            strncpy(dest.sun_path + 1, CONFIG_BROADCAST_SOCKET, sizeof(dest.sun_path) - 2);
+            dest_len = offsetof(struct sockaddr_un, sun_path) + 1 + strlen(CONFIG_BROADCAST_SOCKET);
+            if (sendto(sock, "SUBSCRIBE", 9, MSG_NOSIGNAL, (struct sockaddr *)&dest, dest_len) < 0) {
+                LOGE("subscribe reconnect sendto failed"); close(sock); g_subscribe_running = 0; return;
+            }
+
+            LOGD("subscribe: reconnected successfully");
+            // Notify Kotlin side that we reconnected
+            if (g_onError_mid) {
+                // attach JNI first
+                JNIEnv *cb_env2 = NULL;
+                int nd2 = 0;
+                int ger2 = (*g_jvm)->GetEnv(g_jvm, (void**)&cb_env2, JNI_VERSION_1_6);
+                if (ger2 == JNI_EDETACHED) {
+                    if ((*g_jvm)->AttachCurrentThread(g_jvm, &cb_env2, NULL) != JNI_OK) {
+                        cb_env2 = NULL;
+                    } else { nd2 = 1; }
+                } else if (ger2 != JNI_OK) {
+                    cb_env2 = NULL;
+                }
+                if (cb_env2 != NULL && ger2 != JNI_ERR) {
+                    jstring err = (*cb_env2)->NewStringUTF(cb_env2, "injector disconnected, reconnected");
+                    (*cb_env2)->CallVoidMethod(cb_env2, callback, g_onError_mid, err);
+                    (*cb_env2)->DeleteLocalRef(cb_env2, err);
+                    if (nd2) (*g_jvm)->DetachCurrentThread(g_jvm);
+                }
+            }
+            continue;
         }
+
+        // Data received → reset timeout counter
+        consecutive_timeouts = 0;
 
         char *raw = malloc(BROADCAST_RECEIVE_MAX_SIZE);
         if (!raw) continue;
@@ -465,8 +521,10 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
         if (!arr) {
             if (g_onError_mid) {
                 jstring err = (*cb_env)->NewStringUTF(cb_env, "extract_templates_array failed");
-                (*cb_env)->CallVoidMethod(cb_env, callback, g_onError_mid, err);
-                (*cb_env)->DeleteLocalRef(cb_env, err);
+                if (err != NULL) {
+                    (*cb_env)->CallVoidMethod(cb_env, callback, g_onError_mid, err);
+                    (*cb_env)->DeleteLocalRef(cb_env, err);
+                }
             }
             if (need_detach) (*g_jvm)->DetachCurrentThread(g_jvm);
             continue;
@@ -476,8 +534,10 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
         if (!cleaned) {
             if (g_onError_mid) {
                 jstring err = (*cb_env)->NewStringUTF(cb_env, "transform_templates failed");
-                (*cb_env)->CallVoidMethod(cb_env, callback, g_onError_mid, err);
-                (*cb_env)->DeleteLocalRef(cb_env, err);
+                if (err != NULL) {
+                    (*cb_env)->CallVoidMethod(cb_env, callback, g_onError_mid, err);
+                    (*cb_env)->DeleteLocalRef(cb_env, err);
+                }
             }
             if (need_detach) (*g_jvm)->DetachCurrentThread(g_jvm);
             continue;

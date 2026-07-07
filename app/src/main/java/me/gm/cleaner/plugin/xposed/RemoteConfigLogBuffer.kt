@@ -17,9 +17,8 @@
 package me.gm.cleaner.plugin.xposed
 
 import org.json.JSONArray
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentLinkedDeque
 
 /**
@@ -33,13 +32,13 @@ object RemoteConfigLogBuffer {
     private const val MAX_LOG_COUNT = 200
 
     private val logs = ConcurrentLinkedDeque<String>()
-    private val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
+    private val dateFormat = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
 
     /**
      * 写入一条带时间戳的日志。
      */
     fun log(msg: String) {
-        val line = "[${dateFormat.format(Date())}] $msg"
+        val line = "[${LocalTime.now().format(dateFormat)}] $msg"
         synchronized(logs) {
             logs.addLast(line)
             while (logs.size > MAX_LOG_COUNT) {

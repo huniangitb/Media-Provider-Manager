@@ -153,4 +153,6 @@
     <string name="remote_subscribed">已訂閱自動推送</string>
     <string name="settings_remote_config">遠端設定</string>
     <string name="settings_remote_config_summary">檢視遠端拉取的設定與連線狀態</string>
+    <string name="remote_copy_logs">複製日誌</string>
+    <string name="remote_logs_copied">日誌已複製到剪貼簿</string>
 </resources>

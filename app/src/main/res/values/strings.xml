@@ -205,4 +205,6 @@
     <string name="remote_subscribed">Auto-subscribed</string>
     <string name="settings_remote_config">Remote Config</string>
     <string name="settings_remote_config_summary">View remote pulled config &amp; connection status</string>
+    <string name="remote_copy_logs">Copy logs</string>
+    <string name="remote_logs_copied">Logs copied to clipboard</string>
 </resources>

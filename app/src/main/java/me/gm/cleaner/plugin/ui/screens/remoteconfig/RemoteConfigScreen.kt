@@ -16,6 +16,10 @@
 
 package me.gm.cleaner.plugin.ui.screens.remoteconfig
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -34,6 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
@@ -41,6 +46,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -326,10 +332,32 @@ fun RemoteConfigScreen(
             // ========== 调试日志 ==========
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SectionHeader(
-                        title = stringResource(R.string.remote_debug_log),
-                        supporting = stringResource(R.string.remote_log_entries, logs.size),
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SectionHeader(
+                            title = stringResource(R.string.remote_debug_log),
+                            supporting = stringResource(R.string.remote_log_entries, logs.size),
+                        )
+                        if (logs.isNotEmpty()) {
+                            IconButton(onClick = {
+                                val ctx = context
+                                val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val label = ctx.getString(R.string.remote_debug_log)
+                                val text = logs.joinToString("\n")
+                                clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
+                                Toast.makeText(ctx, R.string.remote_logs_copied, Toast.LENGTH_SHORT).show()
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = stringResource(R.string.remote_copy_logs),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(

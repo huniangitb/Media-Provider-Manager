@@ -173,4 +173,6 @@
     <string name="remote_subscribed">已订阅自动推送</string>
     <string name="settings_remote_config">远程配置</string>
     <string name="settings_remote_config_summary">查看远程拉取的配置与连接状态</string>
+    <string name="remote_copy_logs">复制日志</string>
+    <string name="remote_logs_copied">日志已复制到剪贴板</string>
 </resources>
