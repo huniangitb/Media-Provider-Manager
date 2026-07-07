@@ -140,7 +140,7 @@ abstract class ManagerService : IManagerService.Stub() {
             sp.read()
             RemoteConfigLogBuffer.log("remoteSp initialized, size=${sp.file.length()}")
         }
-        val fetcher = RemoteConfigFetcher(remoteFile).also {
+        val fetcher = RemoteConfigFetcher(remoteFile, remoteSp!!).also {
             it.restoreFromFile()
         }
         remoteConfigFetcher = fetcher
@@ -193,7 +193,6 @@ abstract class ManagerService : IManagerService.Stub() {
 
         // 构建合并结果：以远程为基，同名的被本地覆盖
         val merged = JSONArray()
-        val seenNames = mutableSetOf<String>()
 
         for (i in 0 until remoteArray.length()) {
             val remoteObj = remoteArray.optJSONObject(i) ?: continue
@@ -208,7 +207,6 @@ abstract class ManagerService : IManagerService.Stub() {
                 // 仅远程 → 直接使用
                 merged.put(remoteObj)
             }
-            seenNames.add(name)
         }
 
         // 追加仅在本地存在的模板
@@ -364,8 +362,11 @@ abstract class ManagerService : IManagerService.Stub() {
                 ruleSp.write(what)
                 // 本地写入后重建 ruleSp.templates，保留远程合并
                 ruleSp.templates = Templates(ruleSp.read(),
-                    remoteValues = remoteConfigFetcher?.cachedTemplates
-                        ?: ConfigSubscriptionManager.cachedTemplates)
+                    remoteValues = if (configSubscriptionManager?.isSubscribed == true)
+                        ConfigSubscriptionManager.cachedTemplates
+                    else
+                        remoteConfigFetcher?.cachedTemplates
+                            ?: ConfigSubscriptionManager.cachedTemplates)
             }
             SpIdentifiers.REMOTE_PREFERENCES -> {
                 // 远程配置只读，静默忽略写入

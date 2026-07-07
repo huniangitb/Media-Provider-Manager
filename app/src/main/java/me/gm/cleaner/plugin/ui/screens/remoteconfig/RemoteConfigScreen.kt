@@ -143,7 +143,7 @@ fun RemoteConfigScreen(
             } catch (_: Exception) {
                 // Binder 异常（DeadObjectException 等），由 refreshStatus 显示 disconnected 状态
             }
-            withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+            withContext(Dispatchers.Main) {
                 refreshStatus()
                 isPulling = false
             }
@@ -528,6 +528,14 @@ private fun RemoteTemplateCard(template: Template) {
                             rule.source, rule.target),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = stringResource(R.string.remote_template_redirect_resolved,
+                            Template.resolveDisplayPath(rule.source)),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )

@@ -90,6 +90,7 @@ fun AppNavHost(
                             redirectRules = if (!template.redirectRules.isNullOrEmpty())
                                 Template.GSON.toJson(template.redirectRules) else null,
                             readOnlyPaths = template.readOnlyPaths,
+                            allowPaths = template.allowPaths,
                             enableSandbox = template.enableSandbox,
                         )
                     )
@@ -147,6 +148,7 @@ fun AppNavHost(
                             redirectRules = if (!template.redirectRules.isNullOrEmpty())
                                 Template.GSON.toJson(template.redirectRules) else null,
                             readOnlyPaths = template.readOnlyPaths,
+                            allowPaths = template.allowPaths,
                             enableSandbox = template.enableSandbox,
                         )
                     )
@@ -163,6 +165,7 @@ fun AppNavHost(
                 filterPaths = route.filterPaths,
                 redirectRules = route.redirectRules,
                 readOnlyPaths = route.readOnlyPaths,
+                allowPaths = route.allowPaths,
                 enableSandbox = route.enableSandbox,
                 onNavigateBack = { navController.popBackStack() },
                 onSave = { navController.popBackStack() },

@@ -32,7 +32,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Shield
@@ -57,6 +56,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -84,6 +84,7 @@ fun CreateTemplateScreen(
     filterPaths: List<String>?,
     redirectRules: String? = null,
     readOnlyPaths: List<String>? = null,
+    allowPaths: List<String>? = null,
     enableSandbox: Boolean = false,
     onNavigateBack: () -> Unit,
     onSave: () -> Unit,
@@ -102,7 +103,7 @@ fun CreateTemplateScreen(
     }
     var selectedFilterPaths by remember { mutableStateOf(filterPaths?.distinct().orEmpty()) }
     var selectedReadOnlyPaths by remember { mutableStateOf(readOnlyPaths?.distinct().orEmpty()) }
-    var selectedAllowPaths by remember { mutableStateOf(emptyList<String>()) }
+    var selectedAllowPaths by remember { mutableStateOf(allowPaths?.distinct().orEmpty()) }
     var sandboxEnabled by remember { mutableStateOf(enableSandbox) }
     // Preserve original applyToApp when editing
     val originalPackageNames = packageNames
@@ -110,7 +111,7 @@ fun CreateTemplateScreen(
 
     // Redirect rules state (editable via dialog)
     val redirectRuleList = remember(redirectRules) {
-        if (!redirectRules.isNullOrBlank()) {
+        val parsed = if (!redirectRules.isNullOrBlank()) {
             try {
                 Template.GSON.fromJson(redirectRules, Array<Template.RedirectRule>::class.java).toList()
             } catch (_: Exception) {
@@ -119,7 +120,8 @@ fun CreateTemplateScreen(
         } else {
             emptyList()
         }
-    }.toMutableList()
+        parsed.toMutableList()
+    }
     val editableRedirectRules = remember { mutableStateListOf<Template.RedirectRule>() }
     LaunchedEffect(redirectRuleList) {
         if (editableRedirectRules.isEmpty() && redirectRuleList.isNotEmpty()) {
@@ -160,19 +162,6 @@ fun CreateTemplateScreen(
         val target = uri?.let { treeUriToFile(it, context) }
         val path = target?.path ?: return@rememberLauncherForActivityResult
         selectedAllowPaths = (selectedAllowPaths + path).distinct().sorted()
-    }
-
-    // Parse redirect rules from JSON string
-    val parsedRedirectRules = remember(redirectRules) {
-        if (!redirectRules.isNullOrBlank()) {
-            try {
-                Template.GSON.fromJson(redirectRules, Array<Template.RedirectRule>::class.java).toList()
-            } catch (_: Exception) {
-                emptyList()
-            }
-        } else {
-            emptyList()
-        }
     }
 
     // Auto-save function
@@ -273,28 +262,6 @@ fun CreateTemplateScreen(
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SectionHeader(title = stringResource(R.string.permitted_media_types_title))
-                PreferenceGroup {
-                    mediaTypes.forEachIndexed { index, value ->
-                        TemplateToggleRow(
-                            checked = value in selectedMediaTypes,
-                            label = mediaTypeLabel(context, value),
-                            onClick = {
-                                selectedMediaTypes = if (value in selectedMediaTypes) {
-                                    selectedMediaTypes - value
-                                } else {
-                                    selectedMediaTypes + value
-                                }
-                            },
-                        )
-                        if (index != mediaTypes.lastIndex) {
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                        }
-                    }
-                }
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SectionHeader(title = stringResource(R.string.filter_path_title))
                 PreferenceGroup {
                     PathPickerRow(
@@ -318,7 +285,7 @@ fun CreateTemplateScreen(
                 }
             }
 
-            // 沙盒模式开关
+            // 沙盒模式开关 + 允许的媒体类型（子级）
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SectionHeader(title = stringResource(R.string.enable_sandbox_title))
                 PreferenceGroup {
@@ -351,6 +318,31 @@ fun CreateTemplateScreen(
                             checked = sandboxEnabled,
                             onCheckedChange = { sandboxEnabled = it },
                         )
+                    }
+                    if (!sandboxEnabled) {
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        Text(
+                            text = stringResource(R.string.permitted_media_types_title),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 16.dp, top = 8.dp),
+                        )
+                        mediaTypes.forEachIndexed { index, value ->
+                            TemplateToggleRow(
+                                checked = value in selectedMediaTypes,
+                                label = mediaTypeLabel(context, value),
+                                onClick = {
+                                    selectedMediaTypes = if (value in selectedMediaTypes) {
+                                        selectedMediaTypes - value
+                                    } else {
+                                        selectedMediaTypes + value
+                                    }
+                                },
+                            )
+                            if (index != mediaTypes.lastIndex) {
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                            }
+                        }
                     }
                 }
             }
@@ -441,7 +433,14 @@ fun CreateTemplateScreen(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                                 Text(
-                                    text = Template.resolveDisplayPath(rule.target),
+                                    text = "↳ ${Template.resolveDisplayPath(rule.source)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = "↳ ${Template.resolveDisplayPath(rule.target)}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.outline,
                                     maxLines = 1,
@@ -479,6 +478,13 @@ fun CreateTemplateScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
                             )
+                            if (dialogSource.isNotBlank()) {
+                                Text(
+                                    text = "↳ ${Template.resolveDisplayPath(dialogSource)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                )
+                            }
                             OutlinedTextField(
                                 value = dialogTarget,
                                 onValueChange = { dialogTarget = it },
@@ -575,9 +581,10 @@ private fun TemplateToggleRow(
     checked: Boolean,
     label: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),

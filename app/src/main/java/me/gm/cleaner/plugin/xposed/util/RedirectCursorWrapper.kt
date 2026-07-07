@@ -18,6 +18,7 @@ package me.gm.cleaner.plugin.xposed.util
 
 import android.database.Cursor
 import android.database.CursorWrapper
+import android.database.CharArrayBuffer
 import android.provider.MediaStore.Files.FileColumns
 import me.gm.cleaner.plugin.model.Templates
 
@@ -35,19 +36,41 @@ class RedirectCursorWrapper(
 
     private var dataColumnIndex: Int = -1
 
+    /** 确保 [dataColumnIndex] 已缓存的便捷方法 */
+    private fun ensureDataColumnIndex(): Int {
+        if (dataColumnIndex < 0) {
+            dataColumnIndex = getColumnIndex(FileColumns.DATA)
+        }
+        return dataColumnIndex
+    }
+
     override fun getString(columnIndex: Int): String? {
         val value = super.getString(columnIndex)
         if (value == null) return null
-
-        // 只处理 _data 列
-        if (dataColumnIndex < 0) {
-            dataColumnIndex = getColumnIndex(FileColumns.DATA)
-            if (dataColumnIndex < 0) return value   // 投影不含 _data 列，直接透传
-        }
-        return if (columnIndex == dataColumnIndex) {
+        return if (columnIndex == ensureDataColumnIndex()) {
             templates.reverseRedirect(value)
         } else {
             value
+        }
+    }
+
+    override fun getBlob(columnIndex: Int): ByteArray? {
+        val value = super.getBlob(columnIndex)
+        if (value == null) return null
+        if (columnIndex != ensureDataColumnIndex()) return value
+        val path = String(value, Charsets.UTF_8)
+        val reversed = templates.reverseRedirect(path)
+        return reversed.toByteArray(Charsets.UTF_8)
+    }
+
+    override fun copyStringToBuffer(columnIndex: Int, buffer: CharArrayBuffer) {
+        // 用 getString 确保经过路径重写
+        val s = getString(columnIndex)
+        if (s != null) {
+            buffer.data = s.toCharArray()
+            buffer.sizeCopied = s.length
+        } else {
+            buffer.sizeCopied = 0
         }
     }
 }

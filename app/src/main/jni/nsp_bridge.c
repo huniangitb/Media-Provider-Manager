@@ -25,6 +25,7 @@
 #include <poll.h>
 #include <stddef.h>
 #include <errno.h>
+#include <ctype.h>
 #include <android/log.h>
 
 #define LOG_TAG "nsp_bridge-JNI"
@@ -55,8 +56,18 @@ static char* extract_templates_array(const char *json) {
         if (*p == '\\' && in_str) { esc = 1; continue; }
         if (*p == '"') {
             /* At opening quote (outside string, top-level key depth=1):
-             * check if it's "templates" key */
+             * check if it's "templates" key — but only if the quote
+             * is at a key position (preceded by '{' or ',' not ':'). */
             if (!in_str && depth == 1 && strncmp(p, "\"templates\"", 11) == 0) {
+                // Skip whitespace backward to find the real preceding char
+                const char *before = p - 1;
+                while (before >= json && (*before == ' ' || *before == '\t' || *before == '\n' || *before == '\r'))
+                    before--;
+                // If preceded by ':' this "templates" is a value string, not a key
+                if (before >= json && *before == ':') {
+                    in_str = !in_str;
+                    continue;
+                }
                 key = p;
                 break;
             }
@@ -145,6 +156,7 @@ static char* transform_templates(const char *src) {
     int esc = 0;        /* escape char pending */
     int expect_key = 1; /* next string at depth=1 is a field key (within array) */
     int need_comma = 0; /* 1 = injector fields were stripped; next key needs leading comma */
+    int has_emitted_field = 0; /* 1 = at least one non-injector key-value has been emitted at depth=1 */
     size_t w = 0, r = 0;
 
     while (r < src_len) {
@@ -175,11 +187,11 @@ static char* transform_templates(const char *src) {
                 size_t ks = r + 1;            /* key start */
                 size_t ke = ks;               /* key end (on closing ") */
                 while (ke < src_len && src[ke] != '"') ke++;
-                int klen = (int)(ke - ks);
+                size_t klen = ke - ks;
 
                 if (klen > 0) {
                     /* Buffer the key (bounded to 63 chars) */
-                    int blen = klen < 63 ? klen : 63;
+                    size_t blen = klen < 63 ? klen : 63;
                     char kbuf[64];
                     memcpy(kbuf, src + ks, blen);
                     kbuf[blen] = '\0';
@@ -187,7 +199,7 @@ static char* transform_templates(const char *src) {
                     /* Check injector fields (skip entire key:value) */
                     int is_injector = 0;
                     for (int f = 0; injector_fields[f]; f++) {
-                        int flen = (int)strlen(injector_fields[f]);
+                        size_t flen = strlen(injector_fields[f]);
                         if (klen == flen && memcmp(kbuf, injector_fields[f], flen) == 0) {
                             is_injector = 1; break;
                         }
@@ -202,23 +214,61 @@ static char* transform_templates(const char *src) {
                         expect_key = 0;
                         in_str = 0;
 
-                        if (r < src_len && src[r] == ':') r++;  /* skip ':' */
-                        /* Skip JSON whitespace between ':' and value */
-                        while (r < src_len && (src[r] == ' ' || src[r] == '\t')) r++;
-                        /* Skip value (boolean or null) */
-                        if (r + 4 <= src_len && memcmp(src + r, "true", 4) == 0) r += 4;
-                        else if (r + 5 <= src_len && memcmp(src + r, "false", 5) == 0) r += 5;
-                        else if (r + 4 <= src_len && memcmp(src + r, "null", 4) == 0) r += 4;
-                        /* Skip trailing comma */
+                        /* Skip whitespace before ':', then consume ':' */
+                        while (r < src_len && (src[r] == ' ' || src[r] == '\t' || src[r] == '\n' || src[r] == '\r')) r++;
+                        if (r < src_len && src[r] == ':') r++;
+                        /* Skip whitespace between ':' and value */
+                        while (r < src_len && (src[r] == ' ' || src[r] == '\t' || src[r] == '\n' || src[r] == '\r')) r++;
+                        /* Skip value generically: string, number, boolean, null, object, array */
+                        if (r < src_len) {
+                            char vc = src[r];
+                            if (vc == '"') {
+                                /* Value is a string — skip to closing unescaped " */
+                                r++;
+                                while (r < src_len) {
+                                    if (src[r] == '\\') { r += 2; continue; }
+                                    if (src[r] == '"') { r++; break; }
+                                    r++;
+                                }
+                            } else if (vc == '{') {
+                                /* Value is an object — skip counting {} depth */
+                                int obj_depth = 1; r++;
+                                while (r < src_len && obj_depth > 0) {
+                                    if (src[r] == '"') {
+                                        r++;
+                                        while (r < src_len && !(src[r] == '"' && src[r-1] != '\\')) r++;
+                                        if (r < src_len) r++;
+                                    } else if (src[r] == '{') { obj_depth++; r++; }
+                                    else if (src[r] == '}') { obj_depth--; r++; }
+                                    else r++;
+                                }
+                            } else if (vc == '[') {
+                                /* Value is an array — skip counting [] depth */
+                                int arr_depth = 1; r++;
+                                while (r < src_len && arr_depth > 0) {
+                                    if (src[r] == '[') { arr_depth++; r++; }
+                                    else if (src[r] == ']') { arr_depth--; r++; }
+                                    else r++;
+                                }
+                            } else {
+                                /* Value is a number, boolean, or null — skip alphanumeric chars */
+                                while (r < src_len && (isalnum(src[r]) || src[r] == '-' || src[r] == '+' || src[r] == '.' || src[r] == 'e' || src[r] == 'E')) r++;
+                            }
+                        }
+                        /* Skip whitespace then trailing comma */
+                        while (r < src_len && (src[r] == ' ' || src[r] == '\t' || src[r] == '\n' || src[r] == '\r')) r++;
                         if (r < src_len && src[r] == ',') {
                             r++;
                             expect_key = 1;
                         }
-                        /* Remove leading comma from output buffer;
-                         * mark need_comma so next key adds it back */
-                        if (w > 0 && out[w - 1] == ',') {
-                            w--;
-                            need_comma = 1;
+                        /* Remove trailing comma from output buffer (skip whitespace backward) */
+                        {
+                            size_t b = w;
+                            while (b > 0 && (out[b-1] == ' ' || out[b-1] == '\t' || out[b-1] == '\n' || out[b-1] == '\r')) b--;
+                            if (b > 0 && out[b-1] == ',') {
+                                w = b - 1;
+                                need_comma = 1;
+                            }
                         }
                         continue;   /* skip field entirely */
                     }
@@ -231,6 +281,7 @@ static char* transform_templates(const char *src) {
                             out[w++] = ',';
                             need_comma = 0;
                         }
+                        has_emitted_field = 1;
                         GROW_CHECK(13);
                         memcpy(out + w, "\"filter_path\"", 13);
                         w += 13;
@@ -239,14 +290,18 @@ static char* transform_templates(const char *src) {
                         expect_key = 0;
                         continue;     /* key written, continue to ':' */
                     }
+
+                    /* Non-injector, non-hide_paths key at depth=1: mark field emitted */
+                    has_emitted_field = 1;
                 }
             } else if (!in_str) {
                 /* Closing quote of a key or value — expect_key remains 0 until ':' */
             }
 
             /* Fall through: copy the quote character normally */
-            if (need_comma && in_str) {
-                /* Injector fields were stripped just before; re-add leading comma */
+            if (need_comma && in_str && has_emitted_field) {
+                /* Injector fields were stripped just before; re-add leading comma.
+                 * Only if at least one non-injector field was already emitted in this object. */
                 GROW_CHECK(1);
                 out[w++] = ',';
                 need_comma = 0;
@@ -256,7 +311,7 @@ static char* transform_templates(const char *src) {
 
         /* ── Depth tracking & state transitions (outside strings) ── */
         if (!in_str) {
-            if (c == '{') { depth++; if (depth == 1) expect_key = 1; need_comma = 0; }
+            if (c == '{') { depth++; if (depth == 1) { expect_key = 1; need_comma = 0; has_emitted_field = 0; } }
             else if (c == '}') { depth--; if (depth == 1) need_comma = 0; }
             else if (c == ',') { if (depth == 1) expect_key = 1; need_comma = 0; }
             else if (c == ':') { expect_key = 0; }
@@ -381,8 +436,10 @@ JNIEXPORT void JNICALL
 Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
     JNIEnv *env, jclass clazz, jobject callback) {
 
-    if (g_subscribe_running) { LOGE("subscribe already running"); return; }
-    g_subscribe_running = 1;
+    /* Atomic test-and-set to guard against concurrent subscription setup */
+    if (__sync_lock_test_and_set(&g_subscribe_running, 1)) {
+        LOGE("subscribe already running"); return;
+    }
 
     // 0) 首次调用时缓存接口方法 ID（一次初始化）
     if (g_onConfigUpdateListener_class == NULL) {
