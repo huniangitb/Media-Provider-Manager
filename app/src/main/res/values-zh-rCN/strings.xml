@@ -168,7 +168,10 @@
     <string name="enable_sandbox_title">沙盒模式</string>
     <string name="enable_sandbox_summary">启用时放行所有媒体类型</string>
     <string name="read_only_path_title">只读路径</string>
+    <string name="allow_path_title">放行路径</string>
+    <string name="allow_path_summary">这些路径下的文件不受媒体类型限制</string>
     <string name="redirect_rules_title">重定向规则</string>
+    <string name="add_redirect_rule">添加规则</string>
     <string name="remote_subscription">订阅</string>
     <string name="remote_subscription_active">活跃中（自动推送）</string>
     <string name="remote_subscribed">已订阅自动推送</string>

@@ -35,6 +35,8 @@ data class Template(
     @field:SerializedName("enable_sandbox") val enableSandbox: Boolean = false,
     // 只读路径列表，匹配的文件/目录不可写入（远程配置专用）
     @field:SerializedName("read_only_path") val readOnlyPaths: List<String>? = null,
+    // 放行路径列表，此路径下的文件不受 permittedMediaTypes 限制
+    @field:SerializedName("allow_paths") val allowPaths: List<String>? = null,
     // 重定向规则：source → target 路径映射
     @field:SerializedName("redirect_rules") val redirectRules: List<RedirectRule>? = null,
     // 配置来源标记："local" 或 "remote"，不参与序列化
@@ -175,6 +177,10 @@ class Templates(json: String?, private val remoteValues: List<Template> = emptyL
     ): List<Boolean> =
         dataList.zip(mimeTypeList).map { (data, mimeType) ->
             templates.any { template ->
+                // 放行路径：此路径下的文件不受 permittedMediaTypes 限制
+                if (template.allowPaths?.any { FileUtils.contains(resolvePath(it), data) } == true) {
+                    return@map false
+                }
                 val permittedTypes = template.permittedMediaTypes
                 // enable_sandbox=true 且 permittedMediaTypes 为空/未设置时，放行所有类型
                 val isSandboxPass = template.enableSandbox &&
