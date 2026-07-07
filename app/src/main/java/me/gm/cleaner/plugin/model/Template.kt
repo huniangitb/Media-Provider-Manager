@@ -42,6 +42,20 @@ data class Template(
 ) {
     companion object {
         val GSON: Gson = Gson()
+
+        /** 供 UI 层使用：将相对路径/通配符路径解析为绝对路径 */
+        private val storagePathRegex = Regex("^/storage/emulated/\\d+(/|$)")
+
+        fun resolveDisplayPath(path: String): String {
+            if (storagePathRegex.containsMatchIn(path)) return path
+            val storageRoot = FileUtils.externalStorageDirPath
+            val cleaned = path.trimStart('/')
+            return if (cleaned == "?" || cleaned.startsWith("?/")) {
+                "${storageRoot.trimEnd('/')}/${cleaned.removePrefix("?").trimStart('/')}"
+            } else {
+                "${storageRoot.trimEnd('/')}/$cleaned"
+            }
+        }
     }
 
     data class RedirectRule(

@@ -144,6 +144,7 @@
     <string name="remote_template_sandbox">沙盒：已啟用</string>
     <string name="remote_template_all_apps">所有應用</string>
     <string name="remote_template_redirect_item">%s → %s</string>
+    <string name="remote_template_redirect_resolved">↳ %s</string>
     <string name="enable_sandbox_title">沙盒模式</string>
     <string name="enable_sandbox_summary">啟用時放行所有媒體類型</string>
     <string name="read_only_path_title">唯讀路徑</string>

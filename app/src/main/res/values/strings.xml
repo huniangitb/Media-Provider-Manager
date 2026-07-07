@@ -196,6 +196,7 @@
     <string name="remote_template_sandbox">Sandbox: Enabled</string>
     <string name="remote_template_all_apps">All applications</string>
     <string name="remote_template_redirect_item">%s → %s</string>
+    <string name="remote_template_redirect_resolved">↳ %s</string>
     <string name="enable_sandbox_title">Sandbox Mode</string>
     <string name="enable_sandbox_summary">Allow all media types when enabled</string>
     <string name="read_only_path_title">Read-Only Paths</string>

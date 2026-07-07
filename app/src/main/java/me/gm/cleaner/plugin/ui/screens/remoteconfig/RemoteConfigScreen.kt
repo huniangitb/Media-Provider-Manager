@@ -531,6 +531,14 @@ private fun RemoteTemplateCard(template: Template) {
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    Text(
+                        text = stringResource(R.string.remote_template_redirect_resolved,
+                            Template.resolveDisplayPath(rule.target)),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }
