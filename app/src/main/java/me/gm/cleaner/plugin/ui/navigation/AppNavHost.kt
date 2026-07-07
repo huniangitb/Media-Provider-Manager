@@ -20,6 +20,7 @@ import me.gm.cleaner.plugin.ui.screens.appdetail.AppDetailScreen
 import me.gm.cleaner.plugin.ui.screens.applist.AppListScreen
 import me.gm.cleaner.plugin.ui.screens.createtemplate.CreateTemplateScreen
 import me.gm.cleaner.plugin.ui.screens.settings.SettingsScreen
+import me.gm.cleaner.plugin.ui.screens.remoteconfig.RemoteConfigScreen
 import me.gm.cleaner.plugin.ui.screens.templates.TemplatesScreen
 import me.gm.cleaner.plugin.ui.screens.usagerecord.UsageRecordScreen
 import me.gm.cleaner.plugin.util.collatorComparator
@@ -86,6 +87,10 @@ fun AppNavHost(
                             packageNames = template.applyToApp,
                             permittedMediaTypes = template.permittedMediaTypes?.map { it.toString() },
                             filterPaths = template.filterPath,
+                            redirectRules = if (!template.redirectRules.isNullOrEmpty())
+                                Template.GSON.toJson(template.redirectRules) else null,
+                            readOnlyPaths = template.readOnlyPaths,
+                            enableSandbox = template.enableSandbox,
                         )
                     )
                 },
@@ -104,6 +109,7 @@ fun AppNavHost(
                 rootSpJson = rootSpJson,
                 onOpenDrawer = onOpenDrawer,
                 onTemplatesClick = { navController.navigate(AppRoute.Templates) },
+                onRemoteConfigClick = { navController.navigate(AppRoute.RemoteConfig) },
                 onBackup = {
                     val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                     val clip = android.content.ClipData.newPlainText("MediaProviderManagerRules", templateJson)
@@ -138,6 +144,10 @@ fun AppNavHost(
                             packageNames = template.applyToApp,
                             permittedMediaTypes = template.permittedMediaTypes?.map { it.toString() },
                             filterPaths = template.filterPath,
+                            redirectRules = if (!template.redirectRules.isNullOrEmpty())
+                                Template.GSON.toJson(template.redirectRules) else null,
+                            readOnlyPaths = template.readOnlyPaths,
+                            enableSandbox = template.enableSandbox,
                         )
                     )
                 },
@@ -151,6 +161,9 @@ fun AppNavHost(
                 packageNames = route.packageNames,
                 permittedMediaTypes = route.permittedMediaTypes,
                 filterPaths = route.filterPaths,
+                redirectRules = route.redirectRules,
+                readOnlyPaths = route.readOnlyPaths,
+                enableSandbox = route.enableSandbox,
                 onNavigateBack = { navController.popBackStack() },
                 onSave = { navController.popBackStack() },
                 binderViewModel = binderViewModel,
@@ -158,6 +171,12 @@ fun AppNavHost(
         }
         composable<AppRoute.About> {
             AboutScreen(onOpenDrawer = onOpenDrawer)
+        }
+        composable<AppRoute.RemoteConfig> {
+            RemoteConfigScreen(
+                binderViewModel = binderViewModel,
+                onNavigateBack = { navController.popBackStack() },
+            )
         }
     }
 }

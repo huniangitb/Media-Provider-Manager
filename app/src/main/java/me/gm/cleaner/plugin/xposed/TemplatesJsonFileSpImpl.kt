@@ -22,7 +22,7 @@ import java.io.File
 class TemplatesJsonFileSpImpl(src: File) : JsonFileSpImpl(src) {
     @Volatile
     var templates: Templates = Templates(read())
-        private set
+        internal set
 
     override fun write(what: String) {
         super.write(what)

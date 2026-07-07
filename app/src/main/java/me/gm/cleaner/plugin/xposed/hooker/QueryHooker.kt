@@ -237,6 +237,16 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
                 cursorHandled = true // Cursor is now owned by FilteredCursor
             }
 
+            // 重定向：若有 redirect_rules 匹配，包裹结果游标做路径重写
+            try {
+                val hasRedirect = filteredTemplates.any { t -> !t.redirectRules.isNullOrEmpty() }
+                if (hasRedirect && param.result is Cursor) {
+                    param.result = me.gm.cleaner.plugin.xposed.util.RedirectCursorWrapper(
+                        param.result as Cursor, service.ruleSp.templates
+                    )
+                }
+            } catch (_: Exception) {}
+
             /** RECORD - use async insert */
             if (service.rootSp.getBoolean(
                     service.resources.getString(R.string.usage_record_key), true

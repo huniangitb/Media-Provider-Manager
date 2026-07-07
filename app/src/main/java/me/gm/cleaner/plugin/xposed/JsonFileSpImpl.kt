@@ -55,6 +55,11 @@ open class JsonFileSpImpl(src: File) : SharedPreferencesWrapper() {
     }
 
     @Synchronized
+    fun invalidateCache() {
+        contentCache = null
+    }
+
+    @Synchronized
     fun read(): String? {
         if (contentCache == null) {
             ensureFile()

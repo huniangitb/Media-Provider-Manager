@@ -23,4 +23,5 @@ package me.gm.cleaner.plugin.model
 object SpIdentifiers {
     const val ROOT_PREFERENCES = 1
     const val TEMPLATE_PREFERENCES = 2
+    const val REMOTE_PREFERENCES = 3
 }

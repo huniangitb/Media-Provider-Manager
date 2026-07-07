@@ -118,8 +118,8 @@ class XposedInit : ManagerService(), IXposedHookLoadPackage, IXposedHookZygoteIn
 
     @Throws(Throwable::class)
     private fun onDownloadManagerLoaded(lpparam: LoadPackageParam, context: Context) {
-        XposedHelpers.findAndHookMethod(File::class.java, "mkdir", FileHooker())
-        XposedHelpers.findAndHookMethod(File::class.java, "mkdirs", FileHooker())
+        XposedHelpers.findAndHookMethod(File::class.java, "mkdir", FileHooker(this@XposedInit))
+        XposedHelpers.findAndHookMethod(File::class.java, "mkdirs", FileHooker(this@XposedInit))
     }
 
     @Throws(Throwable::class)

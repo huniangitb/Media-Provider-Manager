@@ -23,14 +23,18 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -39,6 +43,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.gm.cleaner.plugin.R
 import me.gm.cleaner.plugin.model.SpIdentifiers.TEMPLATE_PREFERENCES
@@ -72,6 +78,9 @@ fun CreateTemplateScreen(
     packageNames: List<String>?,
     permittedMediaTypes: List<String>?,
     filterPaths: List<String>?,
+    redirectRules: String? = null,
+    readOnlyPaths: List<String>? = null,
+    enableSandbox: Boolean = false,
     onNavigateBack: () -> Unit,
     onSave: () -> Unit,
     binderViewModel: BinderViewModel,
@@ -88,6 +97,8 @@ fun CreateTemplateScreen(
         mutableStateOf(permittedMediaTypes?.mapNotNull { it.toIntOrNull() }?.toSet() ?: emptySet<Int>())
     }
     var selectedFilterPaths by remember { mutableStateOf(filterPaths?.distinct().orEmpty()) }
+    var selectedReadOnlyPaths by remember { mutableStateOf(readOnlyPaths?.distinct().orEmpty()) }
+    var sandboxEnabled by remember { mutableStateOf(enableSandbox) }
     // Preserve original applyToApp when editing
     val originalPackageNames = packageNames
     var hasLoaded by remember { mutableStateOf(false) }
@@ -109,6 +120,26 @@ fun CreateTemplateScreen(
         val path = target?.path ?: return@rememberLauncherForActivityResult
         selectedFilterPaths = (selectedFilterPaths + path).distinct().sorted()
     }
+    val openReadOnlyTreeLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        val target = uri?.let { treeUriToFile(it, context) }
+        val path = target?.path ?: return@rememberLauncherForActivityResult
+        selectedReadOnlyPaths = (selectedReadOnlyPaths + path).distinct().sorted()
+    }
+
+    // Parse redirect rules from JSON string
+    val parsedRedirectRules = remember(redirectRules) {
+        if (!redirectRules.isNullOrBlank()) {
+            try {
+                Template.GSON.fromJson(redirectRules, Array<Template.RedirectRule>::class.java).toList()
+            } catch (_: Exception) {
+                emptyList()
+            }
+        } else {
+            emptyList()
+        }
+    }
 
     // Auto-save function
     fun saveTemplate() {
@@ -126,6 +157,9 @@ fun CreateTemplateScreen(
             applyToApp = originalPackageNames,
             permittedMediaTypes = selectedMediaTypes.toList().ifEmpty { null },
             filterPath = selectedFilterPaths.ifEmpty { null },
+            readOnlyPaths = selectedReadOnlyPaths.ifEmpty { null },
+            enableSandbox = sandboxEnabled,
+            redirectRules = parsedRedirectRules.ifEmpty { null },
         )
 
         val json = Template.GSON.toJson(
@@ -140,7 +174,7 @@ fun CreateTemplateScreen(
     }
 
     // Auto-save when state changes (after initial load)
-    LaunchedEffect(name, selectedOperations, selectedMediaTypes, selectedFilterPaths) {
+    LaunchedEffect(name, selectedOperations, selectedMediaTypes, selectedFilterPaths, selectedReadOnlyPaths, sandboxEnabled) {
         if (hasLoaded) {
             saveTemplate()
         }
@@ -244,6 +278,109 @@ fun CreateTemplateScreen(
                         )
                         if (index != selectedFilterPaths.lastIndex) {
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        }
+                    }
+                }
+            }
+
+            // 沙盒模式开关
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionHeader(title = stringResource(R.string.enable_sandbox_title))
+                PreferenceGroup {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shield,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = if (sandboxEnabled) MaterialTheme.colorScheme.tertiary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.enable_sandbox_title),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                            Text(
+                                text = stringResource(R.string.enable_sandbox_summary),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = sandboxEnabled,
+                            onCheckedChange = { sandboxEnabled = it },
+                        )
+                    }
+                }
+            }
+
+            // 只读路径
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionHeader(title = stringResource(R.string.read_only_path_title))
+                PreferenceGroup {
+                    PathPickerRow(
+                        title = stringResource(R.string.add_path),
+                        onClick = { openReadOnlyTreeLauncher.launch(null) },
+                    )
+                    if (selectedReadOnlyPaths.isNotEmpty()) {
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    }
+                    selectedReadOnlyPaths.forEachIndexed { index, path ->
+                        FilterPathRow(
+                            path = path,
+                            onRemove = {
+                                selectedReadOnlyPaths = selectedReadOnlyPaths.filterNot { it == path }
+                            },
+                        )
+                        if (index != selectedReadOnlyPaths.lastIndex) {
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        }
+                    }
+                }
+            }
+
+            // 重定向规则（只读展示）
+            if (parsedRedirectRules.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SectionHeader(title = stringResource(R.string.redirect_rules_title))
+                    PreferenceGroup {
+                        parsedRedirectRules.forEachIndexed { index, rule ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                            ) {
+                                Text(
+                                    text = rule.source,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    text = " → ",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Text(
+                                    text = rule.target,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            if (index != parsedRedirectRules.lastIndex) {
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                            }
                         }
                     }
                 }

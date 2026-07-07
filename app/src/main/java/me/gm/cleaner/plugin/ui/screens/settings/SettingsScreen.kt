@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.Rule
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.HorizontalDivider
@@ -41,6 +42,7 @@ import me.gm.cleaner.plugin.model.Template
 import me.gm.cleaner.plugin.ui.components.PreferenceGroup
 import me.gm.cleaner.plugin.ui.components.SectionHeader
 import me.gm.cleaner.plugin.ui.components.TopLevelTopBar
+import me.gm.cleaner.plugin.ui.navigation.AppRoute
 import org.json.JSONObject
 
 @Composable
@@ -48,6 +50,7 @@ fun SettingsScreen(
     rootSpJson: String?,
     onOpenDrawer: () -> Unit,
     onTemplatesClick: () -> Unit,
+    onRemoteConfigClick: () -> Unit,
     onBackup: () -> Unit,
     onRootSettingsChange: (String) -> Unit,
     onTemplateRestore: (String) -> Unit,
@@ -118,6 +121,13 @@ fun SettingsScreen(
                             summary = stringResource(R.string.create_template_title),
                             icon = Icons.AutoMirrored.Filled.Rule,
                             onClick = onTemplatesClick,
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        SettingsNavItem(
+                            title = stringResource(R.string.settings_remote_config),
+                            summary = stringResource(R.string.settings_remote_config_summary),
+                            icon = Icons.Default.Cloud,
+                            onClick = onRemoteConfigClick,
                         )
                     }
                 }

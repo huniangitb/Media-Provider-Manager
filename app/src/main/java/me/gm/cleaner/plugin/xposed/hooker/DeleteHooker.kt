@@ -29,6 +29,7 @@ import de.robv.android.xposed.XposedHelpers
 import me.gm.cleaner.plugin.R
 import me.gm.cleaner.plugin.dao.MediaProviderOperation.Companion.OP_DELETE
 import me.gm.cleaner.plugin.dao.MediaProviderRecord
+import me.gm.cleaner.plugin.util.L
 import me.gm.cleaner.plugin.xposed.ManagerService
 import me.gm.cleaner.plugin.xposed.util.MimeUtils
 import java.io.File
@@ -151,6 +152,19 @@ class DeleteHooker(private val service: ManagerService) : XC_MethodHook(), Media
             }
 
             else -> return // We don't care about these data, just ignore.
+        }
+
+        // 只读路径检查：阻止删除 readOnlyPaths 中的文件
+        try {
+            val hasReadOnly = data.any { d ->
+                service.ruleSp.templates.isReadOnlyPath(d)
+            }
+            if (hasReadOnly) {
+                param.result = 0
+                return
+            }
+        } catch (e: Exception) {
+            L.e("DeleteHooker", "isReadOnlyPath failed", e)
         }
 
         // There is a system confirm dialog before deletion, thus we don't intercept delete operation.

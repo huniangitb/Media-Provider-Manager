@@ -28,10 +28,16 @@ sealed interface AppRoute {
         val packageNames: List<String>? = null,
         val permittedMediaTypes: List<String>? = null,
         val filterPaths: List<String>? = null,
+        val redirectRules: String? = null,
+        val readOnlyPaths: List<String>? = null,
+        val enableSandbox: Boolean = false,
     ) : AppRoute
 
     @Serializable
     data object Templates : AppRoute
+
+    @Serializable
+    data object RemoteConfig : AppRoute
 }
 
 val topLevelDestinations = setOf(
