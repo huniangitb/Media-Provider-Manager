@@ -36,6 +36,7 @@ import me.gm.cleaner.plugin.dao.MediaProviderOperation.Companion.OP_QUERY
 import me.gm.cleaner.plugin.dao.MediaProviderRecord
 import me.gm.cleaner.plugin.xposed.ManagerService
 import me.gm.cleaner.plugin.xposed.util.FilteredCursor
+import me.gm.cleaner.plugin.xposed.util.RedirectCursorWrapper
 import java.lang.reflect.Method
 import java.util.function.Consumer
 import java.util.function.Function
@@ -240,10 +241,13 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
             // 重定向：若有 redirect_rules 匹配，包裹结果游标做路径重写
             try {
                 val hasRedirect = filteredTemplates.any { t -> !t.redirectRules.isNullOrEmpty() }
-                if (hasRedirect && param.result is Cursor) {
-                    param.result = me.gm.cleaner.plugin.xposed.util.RedirectCursorWrapper(
-                        param.result as Cursor, service.ruleSp.templates
-                    )
+                if (hasRedirect) {
+                    val cursor = param.result
+                    if (cursor is Cursor) {
+                        param.result = RedirectCursorWrapper(
+                            cursor, service.ruleSp.templates
+                        )
+                    }
                 }
             } catch (_: Exception) {}
 

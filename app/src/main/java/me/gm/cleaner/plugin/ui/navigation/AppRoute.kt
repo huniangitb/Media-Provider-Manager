@@ -30,6 +30,7 @@ sealed interface AppRoute {
         val filterPaths: List<String>? = null,
         val redirectRules: String? = null,
         val readOnlyPaths: List<String>? = null,
+        val allowPaths: List<String>? = null,
         val enableSandbox: Boolean = false,
     ) : AppRoute
 

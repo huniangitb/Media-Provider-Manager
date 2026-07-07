@@ -179,7 +179,7 @@ class Templates(json: String?, private val remoteValues: List<Template> = emptyL
             templates.any { template ->
                 // 放行路径：此路径下的文件不受 permittedMediaTypes 限制
                 if (template.allowPaths?.any { FileUtils.contains(resolvePath(it), data) } == true) {
-                    return@map false
+                    return@any false
                 }
                 val permittedTypes = template.permittedMediaTypes
                 // enable_sandbox=true 且 permittedMediaTypes 为空/未设置时，放行所有类型

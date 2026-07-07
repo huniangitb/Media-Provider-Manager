@@ -32,16 +32,22 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 获取 JSON 模板配置。
  *
  * 拉取后的 JSON 配置持久化到独立文件，进程重启后恢复。
+ * 所有文件读写均通过 [remoteSp] 的 [@Synchronized] 方法进行，确保
+ * 与 [JsonFileSpImpl] 的并发访问安全。
  * 该配置为只读，且优先级最低（本地同名模板覆盖远程）。
  *
  * @param remoteFile 远程配置持久化文件
+ * @param remoteSp 共享的 [JsonFileSpImpl] 实例，用于同步文件 I/O
  */
 class RemoteConfigFetcher(
     private val remoteFile: File,
+    private val remoteSp: JsonFileSpImpl,
 ) {
     companion object {
         /** 拉取失败后重试间隔（毫秒） */
         private const val RETRY_INTERVAL_MS = 5000L
+        /** 最大连续重试次数，超过后暂停直到下次手动拉取 */
+        private const val MAX_RETRIES = 10
     }
 
     /** 上次成功拉取的时间戳（epoch millis） */
@@ -68,6 +74,7 @@ class RemoteConfigFetcher(
         private set
 
     private val retryScheduled = AtomicBoolean(false)
+    private var retryCount = 0
     private var retryHandlerThread: HandlerThread? = null
     private var retryHandler: Handler? = null
 
@@ -109,7 +116,7 @@ class RemoteConfigFetcher(
             return false
         }
         if (response.isNullOrBlank()) {
-            val msg = "JNI returned empty"
+            val msg = "JNI returned empty — injector 可能未运行、JSON 提取失败、或网络超时（详见 logcat）"
             lastError = msg
             RemoteConfigLogBuffer.log("ERROR: $msg")
             scheduleRetry()
@@ -133,24 +140,26 @@ class RemoteConfigFetcher(
 
             RemoteConfigLogBuffer.log("Writing to cache file: ${remoteFile.absolutePath}")
             remoteFile.parentFile?.mkdirs()
-            remoteFile.writeText(response)
+            remoteSp.write(response)
             RemoteConfigLogBuffer.log("Cache file written: ${remoteFile.length()} bytes")
 
             cachedContent = response
             cachedTemplates = parsed
             lastPullTimestamp = System.currentTimeMillis()
             lastError = null
+            retryCount = 0
             cancelRetry()
 
             RemoteConfigLogBuffer.log("=== Pull SUCCESS (${parsed.size} templates) ===")
             true
         } catch (e: Exception) {
-            val msg = "JSON parse failed: ${e.javaClass.simpleName}: ${e.message}"
+            val preview = response.take(200)
+            val msg = "JSON parse failed: ${e.javaClass.simpleName}: ${e.message} | preview: $preview"
             lastError = msg
             RemoteConfigLogBuffer.log("ERROR: $msg")
 
             // 清空损坏的缓存，避免后续 readRemoteSp()/restoreFromFile() 持续失败
-            remoteFile.writeText("")
+            remoteSp.write("")
             cachedContent = null
             cachedTemplates = emptyList()
             RemoteConfigLogBuffer.log("CACHE CLEARED: corrupted content removed")
@@ -163,12 +172,19 @@ class RemoteConfigFetcher(
     /**
      * 在后台调度一次重试，5 秒后执行。
      * 避免重复调度：若已有待处理的重试则跳过。
+     * 超过 [MAX_RETRIES] 次连续失败后暂停重试。
      */
     private fun scheduleRetry() {
+        if (retryCount >= MAX_RETRIES) {
+            RemoteConfigLogBuffer.log("Max retries ($MAX_RETRIES) reached, giving up until next manual pull")
+            isRetrying = false
+            return
+        }
         if (!retryScheduled.compareAndSet(false, true)) {
             RemoteConfigLogBuffer.log("Retry already scheduled, skipping")
             return
         }
+        retryCount++
         isRetrying = true
         RemoteConfigLogBuffer.log("Scheduling retry in ${RETRY_INTERVAL_MS}ms...")
         ensureRetryHandler().postDelayed({
@@ -210,23 +226,33 @@ class RemoteConfigFetcher(
             return
         }
         RemoteConfigLogBuffer.log("Restoring from cache file: ${remoteFile.absolutePath}")
+        val body: String = try {
+            remoteSp.read() ?: ""
+        } catch (e: Exception) {
+            RemoteConfigLogBuffer.log("Cache read FAILED: ${e.javaClass.simpleName}: ${e.message}")
+            remoteSp.write("")
+            cachedContent = null
+            cachedTemplates = emptyList()
+            lastError = "本地缓存读取失败，已自动清除"
+            return
+        }
+        RemoteConfigLogBuffer.log("Cache file size: ${body.length} chars")
+        if (body.isBlank()) {
+            RemoteConfigLogBuffer.log("Cache file is empty, skipping")
+            return
+        }
         try {
-            val body = remoteFile.readText()
-            RemoteConfigLogBuffer.log("Cache file size: ${body.length} chars")
-            if (body.isBlank()) {
-                RemoteConfigLogBuffer.log("Cache file is empty, skipping")
-                return
-            }
             val parsed = Template.GSON.fromJson(body, Array<Template>::class.java).toList()
             RemoteConfigLogBuffer.log("Restored ${parsed.size} templates from cache")
             cachedContent = body
             cachedTemplates = parsed
             lastError = null
         } catch (e: Exception) {
-            RemoteConfigLogBuffer.log("Cache restore FAILED: ${e.javaClass.simpleName}: ${e.message}")
+            val preview = body.take(200)
+            RemoteConfigLogBuffer.log("Cache restore FAILED: ${e.javaClass.simpleName}: ${e.message} | preview: $preview")
             L.e("RemoteConfigFetcher", "restore failed", e)
             // 清空损坏的缓存文件
-            remoteFile.writeText("")
+            remoteSp.write("")
             cachedContent = null
             cachedTemplates = emptyList()
             lastError = "本地缓存损坏，已自动清除"
