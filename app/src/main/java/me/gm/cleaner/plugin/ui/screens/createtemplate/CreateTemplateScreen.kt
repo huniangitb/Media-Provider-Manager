@@ -32,9 +32,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -45,9 +47,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -98,10 +102,33 @@ fun CreateTemplateScreen(
     }
     var selectedFilterPaths by remember { mutableStateOf(filterPaths?.distinct().orEmpty()) }
     var selectedReadOnlyPaths by remember { mutableStateOf(readOnlyPaths?.distinct().orEmpty()) }
+    var selectedAllowPaths by remember { mutableStateOf(emptyList<String>()) }
     var sandboxEnabled by remember { mutableStateOf(enableSandbox) }
     // Preserve original applyToApp when editing
     val originalPackageNames = packageNames
     var hasLoaded by remember { mutableStateOf(false) }
+
+    // Redirect rules state (editable via dialog)
+    val redirectRuleList = remember(redirectRules) {
+        if (!redirectRules.isNullOrBlank()) {
+            try {
+                Template.GSON.fromJson(redirectRules, Array<Template.RedirectRule>::class.java).toList()
+            } catch (_: Exception) {
+                emptyList()
+            }
+        } else {
+            emptyList()
+        }
+    }.toMutableList()
+    val editableRedirectRules = remember { mutableStateListOf<Template.RedirectRule>() }
+    LaunchedEffect(redirectRuleList) {
+        if (editableRedirectRules.isEmpty() && redirectRuleList.isNotEmpty()) {
+            editableRedirectRules.addAll(redirectRuleList)
+        }
+    }
+    var showRedirectDialog by remember { mutableStateOf(false) }
+    var dialogSource by remember { mutableStateOf("") }
+    var dialogTarget by remember { mutableStateOf("") }
 
     val hookOperations = listOf("query", "insert")
     val mediaTypes = listOf(
@@ -126,6 +153,13 @@ fun CreateTemplateScreen(
         val target = uri?.let { treeUriToFile(it, context) }
         val path = target?.path ?: return@rememberLauncherForActivityResult
         selectedReadOnlyPaths = (selectedReadOnlyPaths + path).distinct().sorted()
+    }
+    val openAllowTreeLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        val target = uri?.let { treeUriToFile(it, context) }
+        val path = target?.path ?: return@rememberLauncherForActivityResult
+        selectedAllowPaths = (selectedAllowPaths + path).distinct().sorted()
     }
 
     // Parse redirect rules from JSON string
@@ -158,8 +192,9 @@ fun CreateTemplateScreen(
             permittedMediaTypes = selectedMediaTypes.toList().ifEmpty { null },
             filterPath = selectedFilterPaths.ifEmpty { null },
             readOnlyPaths = selectedReadOnlyPaths.ifEmpty { null },
+            allowPaths = selectedAllowPaths.ifEmpty { null },
             enableSandbox = sandboxEnabled,
-            redirectRules = parsedRedirectRules.ifEmpty { null },
+            redirectRules = editableRedirectRules.toList().ifEmpty { null },
         )
 
         val json = Template.GSON.toJson(
@@ -174,7 +209,7 @@ fun CreateTemplateScreen(
     }
 
     // Auto-save when state changes (after initial load)
-    LaunchedEffect(name, selectedOperations, selectedMediaTypes, selectedFilterPaths, selectedReadOnlyPaths, sandboxEnabled) {
+    LaunchedEffect(name, selectedOperations, selectedMediaTypes, selectedFilterPaths, selectedReadOnlyPaths, selectedAllowPaths, sandboxEnabled, editableRedirectRules.size) {
         if (hasLoaded) {
             saveTemplate()
         }
@@ -345,45 +380,139 @@ fun CreateTemplateScreen(
                 }
             }
 
-            // 重定向规则（只读展示）
-            if (parsedRedirectRules.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SectionHeader(title = stringResource(R.string.redirect_rules_title))
-                    PreferenceGroup {
-                        parsedRedirectRules.forEachIndexed { index, rule ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                            ) {
-                                Text(
-                                    text = rule.source,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Text(
-                                    text = " → ",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                                Text(
-                                    text = rule.target,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                            if (index != parsedRedirectRules.lastIndex) {
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                            }
+            // 放行路径
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionHeader(title = stringResource(R.string.allow_path_title))
+                Text(
+                    text = stringResource(R.string.allow_path_summary),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 16.dp),
+                )
+                PreferenceGroup {
+                    PathPickerRow(
+                        title = stringResource(R.string.add_path),
+                        onClick = { openAllowTreeLauncher.launch(null) },
+                    )
+                    if (selectedAllowPaths.isNotEmpty()) {
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    }
+                    selectedAllowPaths.forEachIndexed { index, path ->
+                        FilterPathRow(
+                            path = path,
+                            onRemove = {
+                                selectedAllowPaths = selectedAllowPaths.filterNot { it == path }
+                            },
+                        )
+                        if (index != selectedAllowPaths.lastIndex) {
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                         }
                     }
                 }
+            }
+
+            // 重定向规则（可编辑）
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionHeader(title = stringResource(R.string.redirect_rules_title))
+                PreferenceGroup {
+                    PathPickerRow(
+                        title = stringResource(R.string.add_redirect_rule),
+                        onClick = {
+                            dialogSource = ""
+                            dialogTarget = ""
+                            showRedirectDialog = true
+                        },
+                    )
+                    if (editableRedirectRules.isNotEmpty()) {
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    }
+                    editableRedirectRules.forEachIndexed { index, rule ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "${rule.source} → ${rule.target}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = Template.resolveDisplayPath(rule.target),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            IconButton(onClick = {
+                                editableRedirectRules.removeAt(index)
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = stringResource(R.string.delete),
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                        if (index != editableRedirectRules.lastIndex) {
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        }
+                    }
+                }
+            }
+
+            // 添加重定向规则对话框
+            if (showRedirectDialog) {
+                AlertDialog(
+                    onDismissRequest = { showRedirectDialog = false },
+                    title = { Text(stringResource(R.string.add_redirect_rule)) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            OutlinedTextField(
+                                value = dialogSource,
+                                onValueChange = { dialogSource = it },
+                                label = { Text("Source") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                            )
+                            OutlinedTextField(
+                                value = dialogTarget,
+                                onValueChange = { dialogTarget = it },
+                                label = { Text("Target") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                            )
+                            if (dialogTarget.isNotBlank()) {
+                                Text(
+                                    text = "↳ ${Template.resolveDisplayPath(dialogTarget)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            if (dialogSource.isNotBlank() && dialogTarget.isNotBlank()) {
+                                editableRedirectRules.add(
+                                    Template.RedirectRule(source = dialogSource, target = dialogTarget)
+                                )
+                                showRedirectDialog = false
+                            }
+                        }) {
+                            Text(stringResource(android.R.string.ok))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showRedirectDialog = false }) {
+                            Text(stringResource(android.R.string.cancel))
+                        }
+                    },
+                )
             }
         }
     }

@@ -51,26 +51,30 @@ class FileHooker(private val service: ManagerService?) : XC_MethodHook() {
             }
 
             // 2) 只读路径检查
-            val templates = service?.ruleSp?.templates ?: return
-            try {
-                if (templates.isReadOnlyPath(filePath)) {
-                    param.result = false
-                    return
-                }
-            } catch (_: Exception) {}
+            val templates = service?.ruleSp?.templates
+            if (templates != null) {
+                try {
+                    if (templates.isReadOnlyPath(filePath)) {
+                        param.result = false
+                        return
+                    }
+                } catch (_: Exception) {}
+            }
 
             // 3) 重定向：若匹配 redirect_rules.source，则在 target 创建，返回 true
-            try {
-                val redirectData = templates.resolveRedirect(filePath)
-                if (redirectData != filePath) {
-                    val targetFile = File(redirectData)
-                    param.result = when (param.method.name) {
-                        "mkdir" -> targetFile.mkdir()
-                        "mkdirs" -> targetFile.mkdirs()
-                        else -> null
+            if (templates != null) {
+                try {
+                    val redirectData = templates.resolveRedirect(filePath)
+                    if (redirectData != filePath) {
+                        val targetFile = File(redirectData)
+                        param.result = when (param.method.name) {
+                            "mkdir" -> targetFile.mkdir()
+                            "mkdirs" -> targetFile.mkdirs()
+                            else -> null
+                        }
                     }
-                }
-            } catch (_: Exception) {}
+                } catch (_: Exception) {}
+            }
         } finally {
             reentryGuard.set(null)
         }
