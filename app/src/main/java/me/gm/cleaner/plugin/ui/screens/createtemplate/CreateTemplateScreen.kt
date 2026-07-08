@@ -109,23 +109,15 @@ fun CreateTemplateScreen(
     val originalPackageNames = packageNames
     var hasLoaded by remember { mutableStateOf(false) }
 
-    // Redirect rules state (editable via dialog)
-    val redirectRuleList = remember(redirectRules) {
-        val parsed = if (!redirectRules.isNullOrBlank()) {
-            try {
-                Template.GSON.fromJson(redirectRules, Array<Template.RedirectRule>::class.java).toList()
-            } catch (_: Exception) {
-                emptyList()
+    // Redirect rules state (editable via dialog) — keyed on redirectRules,
+    // rebuilt from scratch when navigating to a different template.
+    val editableRedirectRules = remember(redirectRules) {
+        mutableStateListOf<Template.RedirectRule>().apply {
+            if (!redirectRules.isNullOrBlank()) {
+                try {
+                    addAll(Template.GSON.fromJson(redirectRules, Array<Template.RedirectRule>::class.java))
+                } catch (_: Exception) {}
             }
-        } else {
-            emptyList()
-        }
-        parsed.toMutableList()
-    }
-    val editableRedirectRules = remember { mutableStateListOf<Template.RedirectRule>() }
-    LaunchedEffect(redirectRuleList) {
-        if (editableRedirectRules.isEmpty() && redirectRuleList.isNotEmpty()) {
-            editableRedirectRules.addAll(redirectRuleList)
         }
     }
     var showRedirectDialog by remember { mutableStateOf(false) }

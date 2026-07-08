@@ -144,7 +144,9 @@ fun RemoteConfigScreen(
                 // Binder 异常（DeadObjectException 等），由 refreshStatus 显示 disconnected 状态
             }
             withContext(Dispatchers.Main) {
-                refreshStatus()
+                try {
+                    refreshStatus()
+                } catch (_: Exception) { }
                 isPulling = false
             }
         }
@@ -511,6 +513,16 @@ private fun RemoteTemplateCard(template: Template) {
                         template.readOnlyPaths.joinToString(", ")),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (!template.allowPaths.isNullOrEmpty()) {
+                Text(
+                    text = stringResource(R.string.remote_template_allow_paths,
+                        template.allowPaths.joinToString(", ")),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )

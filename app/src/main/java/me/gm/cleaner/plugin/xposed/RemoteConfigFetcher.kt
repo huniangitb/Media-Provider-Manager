@@ -138,7 +138,11 @@ class RemoteConfigFetcher(
 
             // JNI 已转换字段：hide_paths → filter_path，已剥离 injector 内部字段
             val parsed = Template.GSON.fromJson(response, Array<Template>::class.java).toList()
-            RemoteConfigLogBuffer.log("Parsed ${parsed.size} templates")
+            if (response.length <= 1000) {
+                RemoteConfigLogBuffer.log("Full JSON: $response")
+            } else {
+                RemoteConfigLogBuffer.log("Parsed ${parsed.size} templates (JSON ${response.length} chars)")
+            }
 
             RemoteConfigLogBuffer.log("Writing to cache file: ${remoteFile.absolutePath}")
             remoteFile.parentFile?.mkdirs()
@@ -199,6 +203,7 @@ class RemoteConfigFetcher(
     /**
      * 取消所有待处理的重试。
      */
+    @Synchronized
     fun cancelRetry() {
         if (retryScheduled.get()) {
             RemoteConfigLogBuffer.log("Cancelling pending retry")
@@ -211,6 +216,7 @@ class RemoteConfigFetcher(
     /**
      * 释放重试线程资源。当 [RemoteConfigFetcher] 不再需要时调用。
      */
+    @Synchronized
     fun stop() {
         RemoteConfigLogBuffer.log("RemoteConfigFetcher stopping, cleaning up retry thread")
         cancelRetry()

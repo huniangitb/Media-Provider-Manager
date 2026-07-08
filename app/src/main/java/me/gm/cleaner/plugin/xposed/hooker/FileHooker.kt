@@ -36,8 +36,8 @@ class FileHooker(private val service: ManagerService?) : XC_MethodHook() {
     override fun beforeHookedMethod(param: MethodHookParam) {
         // 防止递归：重定向路径的 mkdir 触发同一个 Xposed hook
         if (reentryGuard.get() == true) return
-        reentryGuard.set(true)
         try {
+            reentryGuard.set(true)
             val file = param.thisObject as File
             val filePath = file.absolutePath
 

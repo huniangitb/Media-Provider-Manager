@@ -165,8 +165,9 @@
     <string name="remote_template_all_apps">所有应用</string>
     <string name="remote_template_redirect_item">%s → %s</string>
     <string name="remote_template_redirect_resolved">↳ %s</string>
+    <string name="remote_template_allow_paths">放行路径：%s</string>
     <string name="enable_sandbox_title">沙盒模式</string>
-    <string name="enable_sandbox_summary">启用时放行所有媒体类型</string>
+    <string name="enable_sandbox_summary">启用时拒绝所有媒体类型，仅放行路径中的文件可访问</string>
     <string name="read_only_path_title">只读路径</string>
     <string name="allow_path_title">放行路径</string>
     <string name="allow_path_summary">这些路径下的文件不受媒体类型限制</string>

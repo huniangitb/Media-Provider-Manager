@@ -122,7 +122,14 @@ class Templates(json: String?, private val remoteValues: List<Template> = emptyL
         val result = filteredCache.getOrPut(cacheKey) {
             mergedValues.filter { template ->
                 template.hookOperation.contains(operation) &&
-                        template.applyToApp?.let { "*" in it || it.contains(packageName) } == true
+                        template.applyToApp?.let { "*" in it || it.contains(packageName) } == true &&
+                        // 剔除无任何规则的空模板，避免影响全局规则生效或产生无意义缓存条目
+                        !(template.permittedMediaTypes.isNullOrEmpty() &&
+                                template.filterPath.isNullOrEmpty() &&
+                                template.readOnlyPaths.isNullOrEmpty() &&
+                                template.redirectRules.isNullOrEmpty() &&
+                                template.allowPaths.isNullOrEmpty() &&
+                                !template.enableSandbox)
             }
         }
         
@@ -177,16 +184,17 @@ class Templates(json: String?, private val remoteValues: List<Template> = emptyL
     ): List<Boolean> =
         dataList.zip(mimeTypeList).map { (data, mimeType) ->
             templates.any { template ->
-                // 放行路径：此路径下的文件不受 permittedMediaTypes 限制
+                // 放行路径：此路径下的文件不受任何限制
                 if (template.allowPaths?.any { FileUtils.contains(resolvePath(it), data) } == true) {
                     return@any false
                 }
-                val permittedTypes = template.permittedMediaTypes
-                // enable_sandbox=true 且 permittedMediaTypes 为空/未设置时，放行所有类型
-                val isSandboxPass = template.enableSandbox &&
-                        (permittedTypes.isNullOrEmpty())
-                (!isSandboxPass && permittedTypes != null && permittedTypes.isNotEmpty() &&
-                        MimeUtils.resolveMediaType(mimeType) !in permittedTypes) ||
+                // 沙盒开启 → 拒绝所有媒体类型，仅受 allowPaths 限制
+                if (template.enableSandbox) {
+                    return@any true
+                }
+                // 有限拒绝：permittedMediaTypes 设置且当前类型不在其中
+                (template.permittedMediaTypes != null && template.permittedMediaTypes.isNotEmpty() &&
+                        MimeUtils.resolveMediaType(mimeType) !in template.permittedMediaTypes) ||
                         template.filterPath?.any { FileUtils.contains(resolvePath(it), data) } == true
             }
         }
