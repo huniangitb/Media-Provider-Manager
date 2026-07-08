@@ -50,3 +50,14 @@ fun templateFilterPathSummary(context: Context, template: Template): String? =
                 it.joinToString(" / "),
             )
         }
+
+fun templateAllowPathSummary(context: Context, template: Template): String? =
+    template.allowPaths
+        ?.takeIf { it.isNotEmpty() }
+        ?.let {
+            context.getString(
+                R.string.info_item,
+                context.getString(R.string.allow_path_title),
+                it.joinToString(" / "),
+            )
+        }

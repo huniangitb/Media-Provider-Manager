@@ -71,6 +71,7 @@ import me.gm.cleaner.plugin.ui.components.EmptyStateCard
 import me.gm.cleaner.plugin.ui.components.SectionHeader
 import me.gm.cleaner.plugin.ui.components.SecondaryTopBar
 import me.gm.cleaner.plugin.ui.module.BinderViewModel
+import me.gm.cleaner.plugin.ui.screens.templating.templateAllowPathSummary
 import me.gm.cleaner.plugin.ui.screens.templating.templateFilterPathSummary
 import me.gm.cleaner.plugin.ui.screens.templating.templateMediaTypeSummary
 import me.gm.cleaner.plugin.ui.screens.templating.templateOperationSummary
@@ -367,6 +368,16 @@ private fun AppliedTemplateCard(
                         text = it,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                templateAllowPathSummary(context, template)?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(top = 4.dp),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
