@@ -517,6 +517,16 @@ private fun RemoteTemplateCard(template: Template) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            if (!template.allowPaths.isNullOrEmpty()) {
+                Text(
+                    text = stringResource(R.string.remote_template_allow_paths,
+                        template.allowPaths.joinToString(", ")),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             if (!template.redirectRules.isNullOrEmpty()) {
                 Text(
                     text = stringResource(R.string.remote_template_redirects,

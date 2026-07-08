@@ -54,7 +54,7 @@ class ConfigSubscriptionManager(
                 NativeConfigBridge.nativeSubscribeConfig(object : OnConfigUpdateListener {
                     override fun onConfigUpdate(json: String) {
                         try {
-                            RemoteConfigLogBuffer.log("Subscribe received: ${json.take(100)}")
+                            RemoteConfigLogBuffer.log("Subscribe received: $json")
                             val parsed = Template.GSON.fromJson(json, Array<Template>::class.java).toList()
                             RemoteConfigLogBuffer.log("Subscribe parsed ${parsed.size} templates")
 
