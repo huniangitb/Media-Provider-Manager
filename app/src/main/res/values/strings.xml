@@ -198,6 +198,7 @@
     <string name="remote_template_redirect_item">%s → %s</string>
     <string name="remote_template_redirect_resolved">↳ %s</string>
     <string name="remote_template_allow_paths">Allow paths: %s</string>
+    <string name="remote_label">remote</string>
     <string name="enable_sandbox_title">Sandbox Mode</string>
     <string name="enable_sandbox_summary">Block all media types when enabled, only paths in allow paths are exempt</string>
     <string name="read_only_path_title">Read-Only Paths</string>

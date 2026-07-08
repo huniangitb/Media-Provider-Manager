@@ -406,6 +406,11 @@ abstract class ManagerService : IManagerService.Stub() {
 
     // ----- 远程配置接口 -----
 
+    override fun readRuleSp(): String? {
+        enforceCallerPermission()
+        return ruleSp.read()
+    }
+
     override fun readRemoteSp(): String? {
         enforceCallerPermission()
         return remoteSp?.read()

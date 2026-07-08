@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -24,6 +26,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -155,7 +159,7 @@ private fun TemplateItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .clickable(enabled = template.source != "remote", onClick = onClick),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
@@ -166,10 +170,20 @@ private fun TemplateItem(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = template.templateName,
-                    style = MaterialTheme.typography.bodyLarge,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = template.templateName,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    if (template.source == "remote") {
+                        Spacer(Modifier.width(8.dp))
+                        SuggestionChip(
+                            onClick = {},
+                            label = { Text(stringResource(R.string.remote_label)) },
+                            border = null,
+                        )
+                    }
+                }
                 Text(
                     text = operationSummary,
                     style = MaterialTheme.typography.bodyMedium,
@@ -199,12 +213,14 @@ private fun TemplateItem(
                     )
                 }
             }
-            IconButton(onClick = onDelete) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = stringResource(R.string.delete),
-                    tint = MaterialTheme.colorScheme.error,
-                )
+            if (template.source != "remote") {
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = stringResource(R.string.delete),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,

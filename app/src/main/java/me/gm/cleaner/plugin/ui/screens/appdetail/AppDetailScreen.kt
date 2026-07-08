@@ -39,6 +39,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -331,7 +333,7 @@ private fun AppliedTemplateCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .clickable(enabled = template.source != "remote", onClick = onClick),
         colors = androidx.compose.material3.CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
@@ -341,10 +343,20 @@ private fun AppliedTemplateCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = template.templateName,
-                    style = MaterialTheme.typography.bodyLarge,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = template.templateName,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    if (template.source == "remote") {
+                        Spacer(Modifier.size(8.dp))
+                        SuggestionChip(
+                            onClick = {},
+                            label = { Text(stringResource(R.string.remote_label)) },
+                            border = null,
+                        )
+                    }
+                }
                 Text(
                     text = templateOperationSummary(context, template),
                     style = MaterialTheme.typography.bodyMedium,
@@ -384,12 +396,14 @@ private fun AppliedTemplateCard(
                     )
                 }
             }
-            IconButton(onClick = onRemove) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = stringResource(R.string.remove_from_template),
-                    tint = MaterialTheme.colorScheme.error,
-                )
+            if (template.source != "remote") {
+                IconButton(onClick = onRemove) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = stringResource(R.string.remove_from_template),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         }
     }
@@ -404,7 +418,7 @@ private fun AvailableTemplateCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onAdd),
+            .clickable(enabled = template.source != "remote", onClick = onAdd),
         colors = androidx.compose.material3.CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),

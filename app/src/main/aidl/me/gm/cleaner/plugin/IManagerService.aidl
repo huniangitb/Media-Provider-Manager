@@ -39,4 +39,7 @@ interface IManagerService {
 
     /** 获取远程配置调试日志（JSON 字符串数组，最近 100 条） */
     String getRemoteConfigLogs() = 44;
+
+    /** 读取本地 rule 配置（不合并远程），返回 JSON 字符串 */
+    String readRuleSp() = 45;
 }

@@ -146,6 +146,7 @@
     <string name="remote_template_redirect_item">%s → %s</string>
     <string name="remote_template_redirect_resolved">↳ %s</string>
     <string name="remote_template_allow_paths">放行路徑：%s</string>
+    <string name="remote_label">遠端</string>
     <string name="enable_sandbox_title">沙盒模式</string>
     <string name="enable_sandbox_summary">啟用時拒絕所有媒體類型，僅放行路徑中的檔案可存取</string>
     <string name="read_only_path_title">唯讀路徑</string>

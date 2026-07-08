@@ -5,7 +5,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -44,10 +48,32 @@ fun AppNavHost(
     val sparseArray by binderViewModel.remoteSpCacheLiveData.observeAsState(SparseArray())
     val templateJson = sparseArray.get(me.gm.cleaner.plugin.model.SpIdentifiers.TEMPLATE_PREFERENCES)
     val rootSpJson = sparseArray.get(me.gm.cleaner.plugin.model.SpIdentifiers.ROOT_PREFERENCES)
-    val templateList: List<Template> = remember(templateJson) {
-        runCatching {
-            Templates(templateJson).values.sortedWith(collatorComparator { it.templateName })
+
+    // 本地模板（来自 rule 文件，不合并远程）
+    var localTemplateList by remember { mutableStateOf<List<Template>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        val json = withContext(Dispatchers.IO) { binderViewModel.readRuleSp() }
+        localTemplateList = runCatching {
+            Templates(json).values.sortedWith(collatorComparator { it.templateName })
         }.getOrDefault(emptyList())
+    }
+
+    // 远程模板（来自 rule_remote 文件）
+    var remoteTemplateList by remember { mutableStateOf<List<Template>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        val json = withContext(Dispatchers.IO) { binderViewModel.readRemoteSp() }
+        if (!json.isNullOrBlank()) {
+            remoteTemplateList = runCatching {
+                Templates(json).values.map { it.copy(source = "remote") }
+            }.getOrDefault(emptyList())
+        }
+    }
+
+    // 合并 UI 显示列表：本地优先，远程追加不同名项
+    val mergedTemplates: List<Template> = remember(localTemplateList, remoteTemplateList) {
+        val localNames = localTemplateList.map { it.templateName }.toSet()
+        (localTemplateList + remoteTemplateList.filter { it.templateName !in localNames })
+            .sortedWith(collatorComparator { it.templateName })
     }
 
     NavHost(
@@ -69,7 +95,7 @@ fun AppNavHost(
             AppDetailScreen(
                 packageName = route.packageName,
                 label = route.label,
-                templates = templateList,
+                templates = mergedTemplates,
                 onNavigateBack = { navController.popBackStack() },
                 onCreateTemplate = {
                     navController.navigate(
@@ -127,13 +153,13 @@ fun AppNavHost(
         }
         composable<AppRoute.Templates> {
             TemplatesScreen(
-                templates = templateList,
+                templates = mergedTemplates,
                 onNavigateBack = { navController.popBackStack() },
                 onCreateTemplate = { navController.navigate(AppRoute.CreateTemplate()) },
                 onDeleteTemplate = { template ->
                     binderViewModel.writeTemplateSp(
                         Template.GSON.toJson(
-                            templateList.filterNot { it.templateName == template.templateName }
+                            localTemplateList.filterNot { it.templateName == template.templateName }
                         )
                     )
                 },
