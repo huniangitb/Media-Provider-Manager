@@ -153,7 +153,7 @@ fun AppNavHost(
         }
         composable<AppRoute.Templates> {
             TemplatesScreen(
-                templates = mergedTemplates,
+                templates = localTemplateList,
                 onNavigateBack = { navController.popBackStack() },
                 onCreateTemplate = { navController.navigate(AppRoute.CreateTemplate()) },
                 onDeleteTemplate = { template ->

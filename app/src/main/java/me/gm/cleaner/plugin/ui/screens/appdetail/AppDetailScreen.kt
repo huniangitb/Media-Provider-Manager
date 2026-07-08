@@ -90,7 +90,9 @@ fun AppDetailScreen(
     binderViewModel: BinderViewModel,
 ) {
     val appTemplates = templates.filter { packageName in (it.applyToApp ?: emptyList()) }
-    val availableTemplates = templates.filter { packageName !in (it.applyToApp ?: emptyList()) }
+    val availableTemplates = templates.filter { 
+        packageName !in (it.applyToApp ?: emptyList()) && it.source != "remote" 
+    }
     val context = LocalContext.current
     val packageInfo = remember(packageName, binderViewModel) {
         binderViewModel.getPackageInfo(packageName)

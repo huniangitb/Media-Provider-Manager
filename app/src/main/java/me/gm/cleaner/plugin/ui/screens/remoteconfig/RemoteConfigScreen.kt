@@ -279,7 +279,7 @@ fun RemoteConfigScreen(
                         ) {
                             Button(
                                 onClick = { triggerPull() },
-                                enabled = !isPulling && !isSubscribed,
+                                enabled = !isPulling,
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Refresh,
@@ -290,7 +290,6 @@ fun RemoteConfigScreen(
                                 Text(
                                     when {
                                         isPulling -> stringResource(R.string.remote_pulling)
-                                        isSubscribed -> stringResource(R.string.remote_subscribed)
                                         else -> stringResource(R.string.remote_pull_now)
                                     }
                                 )

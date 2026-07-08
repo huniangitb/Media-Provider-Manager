@@ -71,6 +71,7 @@
     <string name="usage_record_summary">将使用记录保存到数据库。关闭后使用记录页面将不会再出现新的数据。</string>
     <string name="scoped_header">作用域</string>
     <string name="template_management_title">模板管理</string>
+    <string name="template_management_local_title">本地模板管理</string>
     <string name="applied_app_count">应用到 %d 个应用</string>
     <string name="create_template_title">创建模板</string>
     <string name="edit_template_title">编辑模板</string>

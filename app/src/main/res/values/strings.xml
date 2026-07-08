@@ -85,6 +85,7 @@
     <string name="scoped_header">SCOPED</string>
     <string name="template_management_key" translatable="false">template_management</string>
     <string name="template_management_title">Template management</string>
+    <string name="template_management_local_title">Local template management</string>
     <string name="applied_app_count">Applied to %d app(s)</string>
     <string name="create_template_title">Create template</string>
     <string name="edit_template_title">Edit template</string>

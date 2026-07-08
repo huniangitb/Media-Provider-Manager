@@ -64,7 +64,7 @@ fun TemplatesScreen(
     Scaffold(
         topBar = {
             SecondaryTopBar(
-                title = stringResource(R.string.template_management_title),
+                title = stringResource(R.string.template_management_local_title),
                 onNavigateBack = onNavigateBack,
             )
         },
@@ -107,7 +107,7 @@ fun TemplatesScreen(
                     ) {
                         Column(modifier = Modifier.padding(18.dp)) {
                             SectionHeader(
-                                title = stringResource(R.string.template_management_title),
+                                title = stringResource(R.string.template_management_local_title),
                                 supporting = stringResource(R.string.template_count, templates.size),
                             )
                         }
