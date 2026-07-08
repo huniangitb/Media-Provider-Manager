@@ -207,6 +207,8 @@ static char* transform_templates(const char *src) {
 
                     /* Check hide_paths → filter_path rename */
                     int is_hide_paths = (klen == 10 && memcmp(kbuf, "hide_paths", 10) == 0);
+                    /* Check allow_rules → allow_paths rename */
+                    int is_allow_rules = (klen == 11 && memcmp(kbuf, "allow_rules", 11) == 0);
 
                     if (is_injector) {
                         /* ── Injector field: skip key + : + value + trailing comma ── */
@@ -252,7 +254,7 @@ static char* transform_templates(const char *src) {
                                 }
                             } else {
                                 /* Value is a number, boolean, or null — skip alphanumeric chars */
-                                while (r < src_len && (isalnum(src[r]) || src[r] == '-' || src[r] == '+' || src[r] == '.' || src[r] == 'e' || src[r] == 'E')) r++;
+                                while (r < src_len && (isalnum((unsigned char)src[r]) || src[r] == '-' || src[r] == '+' || src[r] == '.' || src[r] == 'e' || src[r] == 'E')) r++;
                             }
                         }
                         /* Skip whitespace then trailing comma */
@@ -291,7 +293,24 @@ static char* transform_templates(const char *src) {
                         continue;     /* key written, continue to ':' */
                     }
 
-                    /* Non-injector, non-hide_paths key at depth=1: mark field emitted */
+                    if (is_allow_rules) {
+                        /* ── Rename "allow_rules" → "allow_paths" ── */
+                        if (need_comma) {
+                            GROW_CHECK(1);
+                            out[w++] = ',';
+                            need_comma = 0;
+                        }
+                        has_emitted_field = 1;
+                        GROW_CHECK(13);
+                        memcpy(out + w, "\"allow_paths\"", 13);
+                        w += 13;
+                        r = ke + 1;   /* past closing " */
+                        in_str = 0;
+                        expect_key = 0;
+                        continue;     /* key written, continue to ':' */
+                    }
+
+                    /* Non-injector, non-hide_paths, non-allow_rules key at depth=1: mark field emitted */
                     has_emitted_field = 1;
                 }
             } else if (!in_str) {
@@ -425,7 +444,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     return JNI_VERSION_1_6;
 }
 
-static volatile int g_subscribe_running = 0;
+static int g_subscribe_running = 0;  /* use __atomic_* for cross-thread access */
 
 /* 缓存的接口方法 ID（避免在 R8 混淆后从具体匿名类按名查找失败） */
 static jclass g_onConfigUpdateListener_class = NULL;
@@ -447,7 +466,7 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
             "me/gm/cleaner/plugin/xposed/OnConfigUpdateListener");
         if (local == NULL) {
             LOGE("nativeSubscribeConfig: FindClass OnConfigUpdateListener failed");
-            g_subscribe_running = 0; return;
+            __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return;
         }
         g_onConfigUpdateListener_class =
             (jclass)(*env)->NewGlobalRef(env, local);
@@ -464,7 +483,7 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
 
     // 1) socket
     int sock = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-    if (sock < 0) { LOGE("subscribe socket failed"); g_subscribe_running = 0; return; }
+    if (sock < 0) { LOGE("subscribe socket failed"); __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return; }
 
     // 2) bind
     struct sockaddr_un local;
@@ -474,7 +493,7 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
     snprintf(local.sun_path + 1, sizeof(local.sun_path) - 2, "nsp_sub_%d", getpid());
     socklen_t local_len = offsetof(struct sockaddr_un, sun_path) + 1 + strlen(local.sun_path + 1);
     if (bind(sock, (struct sockaddr *)&local, local_len) < 0) {
-        LOGE("subscribe bind failed"); close(sock); g_subscribe_running = 0; return;
+        LOGE("subscribe bind failed"); close(sock); __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return;
     }
 
     // 3) sendto SUBSCRIBE
@@ -485,20 +504,20 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
     strncpy(dest.sun_path + 1, CONFIG_BROADCAST_SOCKET, sizeof(dest.sun_path) - 2);
     socklen_t dest_len = offsetof(struct sockaddr_un, sun_path) + 1 + strlen(CONFIG_BROADCAST_SOCKET);
     if (sendto(sock, "SUBSCRIBE", 9, MSG_NOSIGNAL, (struct sockaddr *)&dest, dest_len) < 0) {
-        LOGE("subscribe sendto failed"); close(sock); g_subscribe_running = 0; return;
+        LOGE("subscribe sendto failed"); close(sock); __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return;
     }
 
     // 4) Loop: poll + recv → process → callback
     int consecutive_timeouts = 0;
 #define MAX_CONSECUTIVE_TIMEOUTS 15   /* 15 × 2000ms = 30s silence → reconnect */
 
-    while (g_subscribe_running) {
+    while (__atomic_load_n(&g_subscribe_running, __ATOMIC_ACQUIRE)) {
         struct pollfd pfd;
         memset(&pfd, 0, sizeof(pfd));
         pfd.fd = sock; pfd.events = POLLIN;
         int pr = poll(&pfd, 1, 2000);
         if (pr <= 0) {
-            if (!g_subscribe_running) break;  // stopped
+            if (!__atomic_load_n(&g_subscribe_running, __ATOMIC_ACQUIRE)) break;  // stopped
             consecutive_timeouts++;
             if (consecutive_timeouts < MAX_CONSECUTIVE_TIMEOUTS) continue;  // still waiting
 
@@ -508,7 +527,7 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
             close(sock);
 
             sock = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-            if (sock < 0) { LOGE("subscribe reconnect socket failed"); g_subscribe_running = 0; return; }
+            if (sock < 0) { LOGE("subscribe reconnect socket failed"); __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return; }
 
             memset(&local, 0, sizeof(local));
             local.sun_family = AF_UNIX;
@@ -516,7 +535,7 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
             snprintf(local.sun_path + 1, sizeof(local.sun_path) - 2, "nsp_sub_%d", getpid());
             local_len = offsetof(struct sockaddr_un, sun_path) + 1 + strlen(local.sun_path + 1);
             if (bind(sock, (struct sockaddr *)&local, local_len) < 0) {
-                LOGE("subscribe reconnect bind failed"); close(sock); g_subscribe_running = 0; return;
+                LOGE("subscribe reconnect bind failed"); close(sock); __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return;
             }
 
             memset(&dest, 0, sizeof(dest));
@@ -525,7 +544,7 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
             strncpy(dest.sun_path + 1, CONFIG_BROADCAST_SOCKET, sizeof(dest.sun_path) - 2);
             dest_len = offsetof(struct sockaddr_un, sun_path) + 1 + strlen(CONFIG_BROADCAST_SOCKET);
             if (sendto(sock, "SUBSCRIBE", 9, MSG_NOSIGNAL, (struct sockaddr *)&dest, dest_len) < 0) {
-                LOGE("subscribe reconnect sendto failed"); close(sock); g_subscribe_running = 0; return;
+                LOGE("subscribe reconnect sendto failed"); close(sock); __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return;
             }
 
             LOGD("subscribe: reconnected successfully");
@@ -617,11 +636,11 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
     }
 
     close(sock);
-    g_subscribe_running = 0;
+    __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE);
 }
 
 JNIEXPORT void JNICALL
 Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeStopSubscribe(
     JNIEnv *env, jclass clazz) {
-    g_subscribe_running = 0;
+    __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE);
 }

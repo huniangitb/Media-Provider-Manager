@@ -396,6 +396,13 @@ abstract class ManagerService : IManagerService.Stub() {
             RemoteConfigLogBuffer.log("ERROR: remoteConfigFetcher not initialized")
             return false
         }
+
+        val subscribed = configSubscriptionManager?.isSubscribed == true
+        if (subscribed) {
+            RemoteConfigLogBuffer.log("Subscribed mode: will re-subscribe after pull")
+            configSubscriptionManager?.stop()
+        }
+
         RemoteConfigLogBuffer.log("Cached before pull: ${fetcher.cachedTemplates.size} templates, " +
                 "lastPull=${fetcher.lastPullTimestamp}, error=${fetcher.lastError}")
         val success = fetcher.pull()
@@ -410,6 +417,13 @@ abstract class ManagerService : IManagerService.Stub() {
         } else {
             RemoteConfigLogBuffer.log("Pull failed, retry scheduled automatically")
         }
+
+        // 订阅模式：拉取后重新订阅，刷新推送通道
+        if (subscribed) {
+            RemoteConfigLogBuffer.log("Re-subscribing after manual pull")
+            configSubscriptionManager?.start()
+        }
+
         RemoteConfigLogBuffer.log("=== triggerRemotePull end → $success ===")
         return success
     }

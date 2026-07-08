@@ -26,8 +26,9 @@ class TemplatesJsonFileSpImpl(src: File) : JsonFileSpImpl(src) {
 
     override fun write(what: String) {
         super.write(what)
-        // Clear old cache and create new Templates instance
+        // Clear cache; the caller (ManagerService.writeSp) reassigns
+        // templates with remoteValues immediately after, so we skip
+        // creating an intermediate Templates without remote data.
         templates.clearCache()
-        templates = Templates(what)
     }
 }

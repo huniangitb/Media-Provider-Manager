@@ -94,6 +94,7 @@ class RemoteConfigFetcher(
      *
      * @return true 表示拉取成功；false 表示失败。
      */
+    @Synchronized
     fun pull(): Boolean {
         RemoteConfigLogBuffer.log("=== Pull start ===")
 
@@ -127,6 +128,7 @@ class RemoteConfigFetcher(
         return processResponse(response)
     }
 
+    @Synchronized
     private fun processResponse(response: String): Boolean {
         RemoteConfigLogBuffer.log("Response received, parsing templates array...")
 
