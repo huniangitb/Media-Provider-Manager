@@ -144,7 +144,9 @@ fun RemoteConfigScreen(
                 // Binder 异常（DeadObjectException 等），由 refreshStatus 显示 disconnected 状态
             }
             withContext(Dispatchers.Main) {
-                refreshStatus()
+                try {
+                    refreshStatus()
+                } catch (_: Exception) { }
                 isPulling = false
             }
         }

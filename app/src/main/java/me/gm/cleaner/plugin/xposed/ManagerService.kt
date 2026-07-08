@@ -359,7 +359,36 @@ abstract class ManagerService : IManagerService.Stub() {
         when (who) {
             SpIdentifiers.ROOT_PREFERENCES -> rootSp.write(what)
             SpIdentifiers.TEMPLATE_PREFERENCES -> {
-                ruleSp.write(what)
+                // 过滤：只将本地模板写入 rule 文件，远程模板保留在 rule_remote
+                val remoteJson = remoteSp?.read()
+                val filtered = if (!remoteJson.isNullOrBlank()) {
+                    val localBefore = ruleSp.read()
+                    val remoteNames = try {
+                        val arr = JSONArray(remoteJson)
+                        (0 until arr.length()).map { arr.getJSONObject(it).optString("template_name") }
+                            .filter { it.isNotEmpty() }.toSet()
+                    } catch (_: Exception) { emptySet<String>() }
+                    val localNamesBefore = try {
+                        val arr = JSONArray(localBefore ?: "[]")
+                        (0 until arr.length()).map { arr.getJSONObject(it).optString("template_name") }
+                            .filter { it.isNotEmpty() }.toSet()
+                    } catch (_: Exception) { emptySet<String>() }
+                    val remoteOnly = remoteNames - localNamesBefore
+                    if (remoteOnly.isNotEmpty()) {
+                        try {
+                            val incoming = JSONArray(what)
+                            val filtered = JSONArray()
+                            for (i in 0 until incoming.length()) {
+                                val obj = incoming.getJSONObject(i)
+                                if (obj.optString("template_name") !in remoteOnly) {
+                                    filtered.put(obj)
+                                }
+                            }
+                            filtered.toString()
+                        } catch (_: Exception) { what }
+                    } else what
+                } else what
+                ruleSp.write(filtered)
                 // 本地写入后重建 ruleSp.templates，保留远程合并
                 ruleSp.templates = Templates(ruleSp.read(),
                     remoteValues = if (configSubscriptionManager?.isSubscribed == true)

@@ -199,6 +199,7 @@ class RemoteConfigFetcher(
     /**
      * 取消所有待处理的重试。
      */
+    @Synchronized
     fun cancelRetry() {
         if (retryScheduled.get()) {
             RemoteConfigLogBuffer.log("Cancelling pending retry")
@@ -211,6 +212,7 @@ class RemoteConfigFetcher(
     /**
      * 释放重试线程资源。当 [RemoteConfigFetcher] 不再需要时调用。
      */
+    @Synchronized
     fun stop() {
         RemoteConfigLogBuffer.log("RemoteConfigFetcher stopping, cleaning up retry thread")
         cancelRetry()

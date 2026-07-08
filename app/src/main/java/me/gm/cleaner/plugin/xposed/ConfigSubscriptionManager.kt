@@ -79,7 +79,10 @@ class ConfigSubscriptionManager(
                     override fun onError(message: String) {
                         RemoteConfigLogBuffer.log("Subscribe error: $message")
                         lastError = message
-                        isSubscribed = false
+                        // 连接性错误（超时重连等）不置 false，订阅仍然活跃
+                        if (!message.startsWith("injector disconnected")) {
+                            isSubscribed = false
+                        }
                     }
                 })
             } catch (e: Exception) {
@@ -91,6 +94,12 @@ class ConfigSubscriptionManager(
     }
 
     fun stop() {
+        if (!NativeConfigBridge.ensureLoaded()) {
+            job?.cancel()
+            job = null
+            isSubscribed = false
+            return
+        }
         NativeConfigBridge.nativeStopSubscribe()
         job?.cancel()
         job = null

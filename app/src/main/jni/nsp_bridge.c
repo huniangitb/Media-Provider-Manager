@@ -238,7 +238,15 @@ static char* transform_templates(const char *src) {
                                 while (r < src_len && obj_depth > 0) {
                                     if (src[r] == '"') {
                                         r++;
-                                        while (r < src_len && !(src[r] == '"' && src[r-1] != '\\')) r++;
+                                        /* Skip to closing unescaped " (even backslash count) */
+                                        while (r < src_len) {
+                                            if (src[r] == '"') {
+                                                int bs = 0;
+                                                while (bs < r && src[r - bs - 1] == '\\') bs++;
+                                                if (bs % 2 == 0) break; /* unescaped quote */
+                                            }
+                                            r++;
+                                        }
                                         if (r < src_len) r++;
                                     } else if (src[r] == '{') { obj_depth++; r++; }
                                     else if (src[r] == '}') { obj_depth--; r++; }
@@ -445,6 +453,8 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
 }
 
 static int g_subscribe_running = 0;  /* use __atomic_* for cross-thread access */
+static int g_sub_sock = -1;          /* subscription socket fd, for interrupt by nativeStopSubscribe */
+static int g_sub_counter = 0;        /* counter for unique bind address on rapid restart */
 
 /* 缓存的接口方法 ID（避免在 R8 混淆后从具体匿名类按名查找失败） */
 static jclass g_onConfigUpdateListener_class = NULL;
@@ -484,13 +494,15 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
     // 1) socket
     int sock = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
     if (sock < 0) { LOGE("subscribe socket failed"); __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return; }
+    __atomic_store_n(&g_sub_sock, sock, __ATOMIC_RELEASE);
 
-    // 2) bind
+    // 2) bind — use unique counter to avoid EADDRINUSE on rapid stop/start
+    int seq = __sync_fetch_and_add(&g_sub_counter, 1);
     struct sockaddr_un local;
     memset(&local, 0, sizeof(local));
     local.sun_family = AF_UNIX;
     local.sun_path[0] = '\0';
-    snprintf(local.sun_path + 1, sizeof(local.sun_path) - 2, "nsp_sub_%d", getpid());
+    snprintf(local.sun_path + 1, sizeof(local.sun_path) - 2, "nsp_sub_%d_%d", getpid(), seq);
     socklen_t local_len = offsetof(struct sockaddr_un, sun_path) + 1 + strlen(local.sun_path + 1);
     if (bind(sock, (struct sockaddr *)&local, local_len) < 0) {
         LOGE("subscribe bind failed"); close(sock); __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return;
@@ -528,6 +540,7 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
 
             sock = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
             if (sock < 0) { LOGE("subscribe reconnect socket failed"); __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return; }
+            __atomic_store_n(&g_sub_sock, sock, __ATOMIC_RELEASE);
 
             memset(&local, 0, sizeof(local));
             local.sun_family = AF_UNIX;
@@ -564,6 +577,7 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
                 if (cb_env2 != NULL && ger2 != JNI_ERR) {
                     jstring err = (*cb_env2)->NewStringUTF(cb_env2, "injector disconnected, reconnected");
                     (*cb_env2)->CallVoidMethod(cb_env2, callback, g_onError_mid, err);
+                    if ((*cb_env2)->ExceptionCheck(cb_env2)) (*cb_env2)->ExceptionClear(cb_env2);
                     (*cb_env2)->DeleteLocalRef(cb_env2, err);
                     if (nd2) (*g_jvm)->DetachCurrentThread(g_jvm);
                 }
@@ -599,6 +613,7 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
                 jstring err = (*cb_env)->NewStringUTF(cb_env, "extract_templates_array failed");
                 if (err != NULL) {
                     (*cb_env)->CallVoidMethod(cb_env, callback, g_onError_mid, err);
+                    if ((*cb_env)->ExceptionCheck(cb_env)) (*cb_env)->ExceptionClear(cb_env);
                     (*cb_env)->DeleteLocalRef(cb_env, err);
                 }
             }
@@ -612,6 +627,7 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
                 jstring err = (*cb_env)->NewStringUTF(cb_env, "transform_templates failed");
                 if (err != NULL) {
                     (*cb_env)->CallVoidMethod(cb_env, callback, g_onError_mid, err);
+                    if ((*cb_env)->ExceptionCheck(cb_env)) (*cb_env)->ExceptionClear(cb_env);
                     (*cb_env)->DeleteLocalRef(cb_env, err);
                 }
             }
@@ -629,6 +645,7 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
                 continue;
             }
             (*cb_env)->CallVoidMethod(cb_env, callback, g_onConfigUpdate_mid, js);
+            if ((*cb_env)->ExceptionCheck(cb_env)) (*cb_env)->ExceptionClear(cb_env);
             (*cb_env)->DeleteLocalRef(cb_env, js);
         }
         free(cleaned);
@@ -636,6 +653,7 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
     }
 
     close(sock);
+    __atomic_store_n(&g_sub_sock, -1, __ATOMIC_RELEASE);
     __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE);
 }
 
@@ -643,4 +661,6 @@ JNIEXPORT void JNICALL
 Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeStopSubscribe(
     JNIEnv *env, jclass clazz) {
     __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE);
+    int fd = __atomic_exchange_n(&g_sub_sock, -1, __ATOMIC_ACQ_REL);
+    if (fd >= 0) close(fd);
 }
