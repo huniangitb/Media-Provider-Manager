@@ -25,7 +25,7 @@ import java.io.File
 
 class FileHooker(private val service: ManagerService?) : XC_MethodHook() {
     companion object {
-        private val reentryGuard = ThreadLocal<Boolean>()
+        private val reentryGuard = ThreadLocal.withInitial { false }
     }
 
     private val standardParents: List<File> =
@@ -76,7 +76,7 @@ class FileHooker(private val service: ManagerService?) : XC_MethodHook() {
                 } catch (_: Exception) {}
             }
         } finally {
-            reentryGuard.set(null)
+            reentryGuard.set(false)
         }
     }
 }

@@ -53,7 +53,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -92,7 +91,6 @@ fun RemoteConfigScreen(
     var statusJson by remember { mutableStateOf<String?>(null) }
     var remoteTemplates by remember { mutableStateOf<List<Template>>(emptyList()) }
     var isPulling by remember { mutableStateOf(false) }
-    var lastRefreshTime by remember { mutableLongStateOf(0L) }
 
     // 调试日志（从服务端拉取）
     var logs by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -112,7 +110,6 @@ fun RemoteConfigScreen(
     fun refreshStatus() {
         val status = binderViewModel.getRemoteConfigStatus()
         statusJson = status
-        lastRefreshTime = System.currentTimeMillis()
         refreshLogs()
 
         val remoteJson = binderViewModel.readRemoteSp()
