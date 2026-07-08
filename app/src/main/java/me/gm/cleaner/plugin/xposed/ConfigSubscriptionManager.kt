@@ -97,6 +97,15 @@ class ConfigSubscriptionManager(
         isSubscribed = false
     }
 
+    /**
+     * 停止当前订阅并重新启动。
+     * 用于手动拉取后刷新推送通道。
+     */
+    fun restart() {
+        stop()
+        start()
+    }
+
     companion object {
         @Volatile
         var cachedContent: String? = null
