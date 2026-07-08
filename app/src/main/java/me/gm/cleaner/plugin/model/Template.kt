@@ -50,7 +50,8 @@ data class Template(
 
         fun resolveDisplayPath(path: String): String {
             if (storagePathRegex.containsMatchIn(path)) return path
-            val storageRoot = FileUtils.externalStorageDirPath
+            val storageRoot = FileUtils.externalStorageDirPath.takeUnless { it.isNullOrBlank() }
+                ?: "/storage/emulated/0"
             val cleaned = path.trimStart('/')
             return if (cleaned == "?" || cleaned.startsWith("?/")) {
                 "${storageRoot.trimEnd('/')}/${cleaned.removePrefix("?").trimStart('/')}"
@@ -169,7 +170,8 @@ class Templates(json: String?, private val remoteValues: List<Template> = emptyL
     private fun resolvePath(path: String): String {
         // 已包含 /storage/emulated/{userId}/ 前缀 → 已经是绝对路径
         if (storagePathRegex.containsMatchIn(path)) return path
-        val storageRoot = FileUtils.externalStorageDirPath
+        val storageRoot = FileUtils.externalStorageDirPath.takeUnless { it.isNullOrBlank() }
+            ?: "/storage/emulated/0"
         val cleaned = path.trimStart('/')
         // 通配符 ? → 当前用户的存储根目录（支持多用户）
         return if (cleaned == "?" || cleaned.startsWith("?/")) {

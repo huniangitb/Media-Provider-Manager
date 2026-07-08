@@ -536,7 +536,9 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
             // Too many consecutive timeouts → injector likely gone; reconnect
             LOGD("subscribe: %d consecutive timeouts, reconnecting...", consecutive_timeouts);
             consecutive_timeouts = 0;
-            close(sock);
+            // 先原子清空 g_sub_sock，再关闭旧 fd，消除 double-close 竞态
+            int old_sock = __atomic_exchange_n(&g_sub_sock, -1, __ATOMIC_ACQ_REL);
+            if (old_sock >= 0) close(old_sock);
 
             sock = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
             if (sock < 0) { LOGE("subscribe reconnect socket failed"); __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return; }

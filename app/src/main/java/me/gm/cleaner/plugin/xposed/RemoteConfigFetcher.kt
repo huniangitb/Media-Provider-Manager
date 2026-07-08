@@ -75,6 +75,8 @@ class RemoteConfigFetcher(
 
     private val retryScheduled = AtomicBoolean(false)
     private var retryCount = 0
+    @Volatile
+    private var stopped = false
     private var retryHandlerThread: HandlerThread? = null
     private var retryHandler: Handler? = null
 
@@ -181,6 +183,7 @@ class RemoteConfigFetcher(
      * 超过 [MAX_RETRIES] 次连续失败后暂停重试。
      */
     private fun scheduleRetry() {
+        if (stopped) return
         if (retryCount >= MAX_RETRIES) {
             RemoteConfigLogBuffer.log("Max retries ($MAX_RETRIES) reached, giving up until next manual pull")
             isRetrying = false
@@ -219,6 +222,7 @@ class RemoteConfigFetcher(
     @Synchronized
     fun stop() {
         RemoteConfigLogBuffer.log("RemoteConfigFetcher stopping, cleaning up retry thread")
+        stopped = true
         cancelRetry()
         retryHandlerThread?.quitSafely()
         retryHandlerThread = null

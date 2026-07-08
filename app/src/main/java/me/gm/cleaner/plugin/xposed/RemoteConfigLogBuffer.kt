@@ -22,27 +22,41 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentLinkedDeque
 
 /**
- * 远程配置调试日志缓冲 —— 环形缓冲区，保存最近 [MAX_LOG_COUNT] 条日志。
+ * 远程配置调试日志缓冲 —— 按拉取轮次裁剪，仅保留最近 [KEEP_PULL_CYCLES] 次拉取操作的日志。
  *
  * 由 [RemoteConfigFetcher] 和 [ManagerService] 写入，
  * 通过 AIDL [getRemoteConfigLogs] 暴露给客户端 UI 显示。
  */
 object RemoteConfigLogBuffer {
 
-    private const val MAX_LOG_COUNT = 200
+    private const val KEEP_PULL_CYCLES = 2
+    private const val PULL_START_MARKER = "=== Pull start ==="
 
     private val logs = ConcurrentLinkedDeque<String>()
+    private val pullCycleMarkers = ConcurrentLinkedDeque<String>()
     private val dateFormat = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
 
     /**
      * 写入一条带时间戳的日志。
+     * 当收到 Pull start 标记时，自动裁剪超过 [KEEP_PULL_CYCLES] 轮的旧日志。
      */
     fun log(msg: String) {
         val line = "[${LocalTime.now().format(dateFormat)}] $msg"
         synchronized(logs) {
             logs.addLast(line)
-            while (logs.size > MAX_LOG_COUNT) {
-                logs.pollFirst()
+
+            if (msg == PULL_START_MARKER) {
+                pullCycleMarkers.addLast(line)
+                // 超过保留轮次时，从头部裁剪最旧一轮的日志
+                while (pullCycleMarkers.size > KEEP_PULL_CYCLES) {
+                    val oldestMarker = pullCycleMarkers.pollFirst() ?: break
+                    val nextMarker = pullCycleMarkers.peekFirst()
+                    while (logs.isNotEmpty()) {
+                        val first = logs.peekFirst()
+                        if (nextMarker != null && first == nextMarker) break
+                        logs.pollFirst()
+                    }
+                }
             }
         }
     }
@@ -58,8 +72,7 @@ object RemoteConfigLogBuffer {
      * 获取最近 N 条日志。
      */
     fun getLast(n: Int): List<String> = synchronized(logs) {
-        val all = logs.toList()
-        all.takeLast(n.coerceIn(1, MAX_LOG_COUNT))
+        logs.toList().takeLast(n.coerceAtLeast(1))
     }
 
     /**

@@ -190,6 +190,9 @@ class BinderViewModel @Inject constructor(
     fun readRemoteSp(): String? =
         serviceCall("readRemoteSp") { readRemoteSp() }
 
+    fun readRuleSp(): String? =
+        serviceCall("readRuleSp") { readRuleSp() }
+
     fun writeRemoteSp(what: String) {
         // 远程配置只读，写入静默忽略（由服务端 enforce）
         serviceCall("writeRemoteSp") { writeRemoteSp(what); true }

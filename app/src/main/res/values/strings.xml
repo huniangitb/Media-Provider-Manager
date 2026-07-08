@@ -85,6 +85,7 @@
     <string name="scoped_header">SCOPED</string>
     <string name="template_management_key" translatable="false">template_management</string>
     <string name="template_management_title">Template management</string>
+    <string name="template_management_local_title">Local template management</string>
     <string name="applied_app_count">Applied to %d app(s)</string>
     <string name="create_template_title">Create template</string>
     <string name="edit_template_title">Edit template</string>
@@ -198,6 +199,7 @@
     <string name="remote_template_redirect_item">%s → %s</string>
     <string name="remote_template_redirect_resolved">↳ %s</string>
     <string name="remote_template_allow_paths">Allow paths: %s</string>
+    <string name="remote_label">remote</string>
     <string name="enable_sandbox_title">Sandbox Mode</string>
     <string name="enable_sandbox_summary">Block all media types when enabled, only paths in allow paths are exempt</string>
     <string name="read_only_path_title">Read-Only Paths</string>
