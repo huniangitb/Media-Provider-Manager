@@ -28,6 +28,23 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Enable Gradle build cache
+        run: |
+          mkdir -p ~/.gradle/caches
+          echo "org.gradle.caching=true" >> gradle.properties
+          echo "org.gradle.caching.debug=false" >> gradle.properties
+          echo "org.gradle.parallel=true" >> gradle.properties
+
+      - name: Cache Gradle build outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches/
+            ~/.gradle/configuration-cache/
+          key: ${{ runner.os }}-gradle-build-${{ hashFiles('**/*.kt', '**/*.java', '**/*.c', '**/*.h', '**/*.cpp', '**/build.gradle.kts', '**/build.gradle', 'gradle.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-build-
+
       - name: Build APK
         run: ./gradlew assembleRelease --stacktrace
 
