@@ -190,7 +190,7 @@ fun CreateTemplateScreen(
     }
 
     // Auto-save when state changes (after initial load)
-    LaunchedEffect(name, selectedOperations, selectedMediaTypes, selectedFilterPaths, selectedReadOnlyPaths, selectedAllowPaths, sandboxEnabled, editableRedirectRules.size) {
+    LaunchedEffect(selectedOperations, selectedMediaTypes, selectedFilterPaths, selectedReadOnlyPaths, selectedAllowPaths, sandboxEnabled, editableRedirectRules.size) {
         if (hasLoaded) {
             saveTemplate()
         }

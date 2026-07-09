@@ -161,6 +161,8 @@ fun RemoteConfigScreen(
     val isRetryingStatus = statusObj?.optBoolean("isRetrying", false) ?: false
     val isSubscribed = statusObj?.optBoolean("isSubscribed", false) ?: false
     val logCount = statusObj?.optInt("logCount", 0) ?: 0
+    val subscribeStatus = statusObj?.optString("subscribeStatus", null)
+    val lastStartError = statusObj?.optString("lastStartError", null)?.takeIf { it != "null" }
     val isConnected = lastPull > 0 && errorMsg == null && !isRetryingStatus
 
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -267,6 +269,14 @@ fun RemoteConfigScreen(
                         if (errorMsg != null) {
                             StatusRow(
                                 stringResource(R.string.remote_error), errorMsg, isError = true)
+                        }
+                        if (lastStartError != null) {
+                            StatusRow(
+                                stringResource(R.string.remote_diagnostic), lastStartError, isError = true)
+                        }
+                        if (subscribeStatus != null && subscribeStatus != "active") {
+                            StatusRow(
+                                stringResource(R.string.remote_subscribe_status), subscribeStatus)
                         }
 
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
@@ -487,7 +497,11 @@ private fun RemoteTemplateCard(template: Template) {
                     val pm = context.packageManager
                     template.applyToApp.map { pkg ->
                         if (pkg == "*") {
-                            context.getString(R.string.remote_template_all_apps)
+                            if (template.globalInject) {
+                                context.getString(R.string.remote_template_all_apps)
+                            } else {
+                                context.getString(R.string.remote_template_injected_only)
+                            }
                         } else {
                             try {
                                 val ai = pm.getApplicationInfo(pkg, 0)

@@ -51,7 +51,7 @@ fun AppNavHost(
 
     // 本地模板（来自 rule 文件，不合并远程）
     var localTemplateList by remember { mutableStateOf<List<Template>>(emptyList()) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(templateJson) {
         val json = withContext(Dispatchers.IO) { binderViewModel.readRuleSp() }
         localTemplateList = runCatching {
             Templates(json).values.sortedWith(collatorComparator { it.templateName })
@@ -60,7 +60,7 @@ fun AppNavHost(
 
     // 远程模板（来自 rule_remote 文件）
     var remoteTemplateList by remember { mutableStateOf<List<Template>>(emptyList()) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(templateJson) {
         val json = withContext(Dispatchers.IO) { binderViewModel.readRemoteSp() }
         if (!json.isNullOrBlank()) {
             remoteTemplateList = runCatching {

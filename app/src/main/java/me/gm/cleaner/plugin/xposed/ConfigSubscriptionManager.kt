@@ -43,17 +43,26 @@ class ConfigSubscriptionManager(
     private var job: Job? = null
 
     fun start() {
-        if (job != null) return
-        if (!NativeConfigBridge.ensureLoaded()) return
+        lastStartError = null
+        if (job != null) {
+            lastStartError = "already running"
+            return
+        }
+        if (!NativeConfigBridge.ensureLoaded()) {
+            lastStartError = "JNI not loaded"
+            return
+        }
 
         job = CoroutineScope(Dispatchers.IO).launch {
             RemoteConfigLogBuffer.log("=== Subscribe start ===")
+            subscribeStatus = "starting"
             // 协程启动即标记已订阅，不等首次回调
             isSubscribed = true
             try {
                 NativeConfigBridge.nativeSubscribeConfig(object : OnConfigUpdateListener {
                     override fun onConfigUpdate(json: String) {
                         try {
+                            subscribeStatus = "active"
                             RemoteConfigLogBuffer.log("Subscribe received: $json")
                             val parsed = Template.GSON.fromJson(json, Array<Template>::class.java).toList()
                             RemoteConfigLogBuffer.log("Subscribe parsed ${parsed.size} templates")
@@ -87,8 +96,10 @@ class ConfigSubscriptionManager(
                 })
             } catch (e: Exception) {
                 RemoteConfigLogBuffer.log("Subscribe threw: ${e.message}")
+                lastError = "Subscribe threw: ${e.message}"
             }
             isSubscribed = false
+            subscribeStatus = "failed"
             RemoteConfigLogBuffer.log("=== Subscribe ended ===")
         }
     }
@@ -98,12 +109,14 @@ class ConfigSubscriptionManager(
             job?.cancel()
             job = null
             isSubscribed = false
+            subscribeStatus = "idle"
             return
         }
         NativeConfigBridge.nativeStopSubscribe()
         job?.cancel()
         job = null
         isSubscribed = false
+        subscribeStatus = "idle"
     }
 
     /**
@@ -128,5 +141,9 @@ class ConfigSubscriptionManager(
         @Volatile
         var lastError: String? = null
             private set
+        @Volatile
+        var lastStartError: String? = null    // 上次 start() 失败原因
+        @Volatile
+        var subscribeStatus: String = "idle"  // idle | starting | active | failed
     }
 }

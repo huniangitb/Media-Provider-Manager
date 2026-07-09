@@ -476,6 +476,8 @@ abstract class ManagerService : IManagerService.Stub() {
             put("logCount", RemoteConfigLogBuffer.size())
             put("isRetrying", fetcher.isRetrying)
             put("isSubscribed", subscribed)
+            put("subscribeStatus", ConfigSubscriptionManager.subscribeStatus)
+            put("lastStartError", ConfigSubscriptionManager.lastStartError ?: JSONObject.NULL)
         }
         return status.toString()
     }
