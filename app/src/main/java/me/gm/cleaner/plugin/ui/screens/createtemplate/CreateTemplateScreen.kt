@@ -48,7 +48,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -107,7 +106,6 @@ fun CreateTemplateScreen(
     var sandboxEnabled by remember { mutableStateOf(enableSandbox) }
     // Preserve original applyToApp when editing
     val originalPackageNames = packageNames
-    var hasLoaded by remember { mutableStateOf(false) }
 
     // Redirect rules state (editable via dialog) — keyed on redirectRules,
     // rebuilt from scratch when navigating to a different template.
@@ -182,18 +180,6 @@ fun CreateTemplateScreen(
             existingTemplates.filterNot { it.templateName == templateName } + template
         )
         binderViewModel.writeSp(TEMPLATE_PREFERENCES, json)
-    }
-
-    // Load existing template data on first render
-    LaunchedEffect(Unit) {
-        hasLoaded = true
-    }
-
-    // Auto-save when state changes (after initial load)
-    LaunchedEffect(selectedOperations, selectedMediaTypes, selectedFilterPaths, selectedReadOnlyPaths, selectedAllowPaths, sandboxEnabled, editableRedirectRules.size) {
-        if (hasLoaded) {
-            saveTemplate()
-        }
     }
 
     Scaffold(

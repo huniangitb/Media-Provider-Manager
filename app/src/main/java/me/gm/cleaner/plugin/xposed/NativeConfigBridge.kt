@@ -17,7 +17,6 @@
 package me.gm.cleaner.plugin.xposed
 
 import me.gm.cleaner.plugin.util.L
-import me.gm.cleaner.plugin.model.Template
 
 /**
  * JNI 桥接 —— 直接通过 Unix Domain Socket 从 injector 拉取/订阅配置。
