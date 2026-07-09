@@ -61,3 +61,17 @@ fun templateAllowPathSummary(context: Context, template: Template): String? =
                 it.joinToString(" / "),
             )
         }
+
+/** 模板是否全局范围（apply_to_app 包含 "*"） */
+fun templateIsGlobal(template: Template): Boolean =
+    template.applyToApp?.contains("*") == true
+
+/** 全局模板的作用域标签：traditional global → "全局", passive global → "被动" */
+fun templateScopeLabel(context: Context, template: Template): String? {
+    if (!templateIsGlobal(template)) return null
+    return if (template.globalInject) {
+        context.getString(R.string.template_scope_global)
+    } else {
+        context.getString(R.string.template_scope_passive)
+    }
+}

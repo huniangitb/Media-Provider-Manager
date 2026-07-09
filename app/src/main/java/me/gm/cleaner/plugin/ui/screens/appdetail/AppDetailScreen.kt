@@ -77,6 +77,7 @@ import me.gm.cleaner.plugin.ui.screens.templating.templateAllowPathSummary
 import me.gm.cleaner.plugin.ui.screens.templating.templateFilterPathSummary
 import me.gm.cleaner.plugin.ui.screens.templating.templateMediaTypeSummary
 import me.gm.cleaner.plugin.ui.screens.templating.templateOperationSummary
+import me.gm.cleaner.plugin.ui.screens.templating.templateScopeLabel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -358,6 +359,16 @@ private fun AppliedTemplateCard(
                             border = null,
                         )
                     }
+                    // 全局范围标签
+                    templateScopeLabel(context, template)?.let { label ->
+                        if (template.source != "remote") Spacer(Modifier.size(8.dp))
+                        Spacer(Modifier.size(8.dp))
+                        SuggestionChip(
+                            onClick = {},
+                            label = { Text(label) },
+                            border = null,
+                        )
+                    }
                 }
                 Text(
                     text = templateOperationSummary(context, template),
@@ -431,10 +442,21 @@ private fun AvailableTemplateCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = template.templateName,
-                    style = MaterialTheme.typography.bodyLarge,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = template.templateName,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    // 全局范围标签
+                    templateScopeLabel(context, template)?.let { label ->
+                        Spacer(Modifier.size(8.dp))
+                        SuggestionChip(
+                            onClick = {},
+                            label = { Text(label) },
+                            border = null,
+                        )
+                    }
+                }
                 Text(
                     text = templateOperationSummary(context, template),
                     style = MaterialTheme.typography.bodyMedium,
