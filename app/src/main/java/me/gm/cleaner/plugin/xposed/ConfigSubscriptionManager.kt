@@ -44,15 +44,18 @@ class ConfigSubscriptionManager(
 
     fun start() {
         lastStartError = null
+        // 主动清理旧订阅，确保服务端不会被无效占用
         if (job != null) {
-            lastStartError = "already running"
-            return
+            NativeConfigBridge.nativeStopSubscribe()
+            job?.cancel()
+            job = null
         }
         if (!NativeConfigBridge.ensureLoaded()) {
             lastStartError = "JNI not loaded"
             return
         }
 
+        val myGen = ++subscribeGen
         job = CoroutineScope(Dispatchers.IO).launch {
             RemoteConfigLogBuffer.log("=== Subscribe start ===")
             subscribeStatus = "starting"
@@ -98,8 +101,11 @@ class ConfigSubscriptionManager(
                 RemoteConfigLogBuffer.log("Subscribe threw: ${e.message}")
                 lastError = "Subscribe threw: ${e.message}"
             }
-            isSubscribed = false
-            subscribeStatus = "failed"
+            // 仅当没有新订阅启动时才重置状态，避免覆盖新订阅
+            if (myGen == subscribeGen) {
+                isSubscribed = false
+                subscribeStatus = "failed"
+            }
             RemoteConfigLogBuffer.log("=== Subscribe ended ===")
         }
     }
@@ -109,14 +115,12 @@ class ConfigSubscriptionManager(
             job?.cancel()
             job = null
             isSubscribed = false
-            subscribeStatus = "idle"
             return
         }
         NativeConfigBridge.nativeStopSubscribe()
         job?.cancel()
         job = null
         isSubscribed = false
-        subscribeStatus = "idle"
     }
 
     /**
@@ -145,5 +149,7 @@ class ConfigSubscriptionManager(
         var lastStartError: String? = null    // 上次 start() 失败原因
         @Volatile
         var subscribeStatus: String = "idle"  // idle | starting | active | failed
+        @Volatile
+        var subscribeGen: Int = 0            // 代数计数器，防旧协程覆盖新订阅状态
     }
 }

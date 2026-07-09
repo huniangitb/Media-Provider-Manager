@@ -274,7 +274,7 @@ fun RemoteConfigScreen(
                             StatusRow(
                                 stringResource(R.string.remote_diagnostic), lastStartError, isError = true)
                         }
-                        if (subscribeStatus != null && subscribeStatus != "active") {
+                        if (subscribeStatus != null && subscribeStatus != "active" && subscribeStatus != "idle" && subscribeStatus != "starting") {
                             StatusRow(
                                 stringResource(R.string.remote_subscribe_status), subscribeStatus)
                         }
@@ -450,15 +450,15 @@ private fun RemoteTemplateCard(template: Template) {
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(
-                text = template.templateName,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            // 全局范围标签
-            templateScopeLabel(context, template)?.let { label ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Spacer(Modifier.width(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = template.templateName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                // 全局范围标签（内联显示）
+                templateScopeLabel(context, template)?.let { label ->
+                    Spacer(Modifier.width(8.dp))
                     SuggestionChip(
                         onClick = {},
                         label = { Text(label, style = MaterialTheme.typography.labelSmall) },

@@ -465,6 +465,10 @@ JNIEXPORT void JNICALL
 Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
     JNIEnv *env, jclass clazz, jobject callback) {
 
+    // 代数计数器 + 当前代数，防止清理时关闭新订阅的 socket
+    static int g_sub_gen = 0;
+    int my_gen = __sync_fetch_and_add(&g_sub_gen, 1);
+    
     /* Atomic test-and-set to guard against concurrent subscription setup */
     if (__sync_lock_test_and_set(&g_subscribe_running, 1)) {
         LOGE("subscribe already running"); return;
@@ -536,9 +540,13 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
             // Too many consecutive timeouts → injector likely gone; reconnect
             LOGD("subscribe: %d consecutive timeouts, reconnecting...", consecutive_timeouts);
             consecutive_timeouts = 0;
-            // 先原子清空 g_sub_sock，再关闭旧 fd，消除 double-close 竞态
+            // 先发 UNSUBSCRIBE 再关闭旧 fd，确保 injector 及时清理
             int old_sock = __atomic_exchange_n(&g_sub_sock, -1, __ATOMIC_ACQ_REL);
-            if (old_sock >= 0) close(old_sock);
+            if (old_sock >= 0) {
+                sendto(old_sock, "UNSUBSCRIBE", 11, MSG_NOSIGNAL,
+                       (struct sockaddr *)&dest, dest_len);
+                close(old_sock);
+            }
 
             sock = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
             if (sock < 0) { LOGE("subscribe reconnect socket failed"); __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return; }
@@ -547,7 +555,8 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
             memset(&local, 0, sizeof(local));
             local.sun_family = AF_UNIX;
             local.sun_path[0] = '\0';
-            snprintf(local.sun_path + 1, sizeof(local.sun_path) - 2, "nsp_sub_%d", getpid());
+            int reconn_seq = __sync_fetch_and_add(&g_sub_counter, 1);
+            snprintf(local.sun_path + 1, sizeof(local.sun_path) - 2, "nsp_sub_%d_%d", getpid(), reconn_seq);
             local_len = offsetof(struct sockaddr_un, sun_path) + 1 + strlen(local.sun_path + 1);
             if (bind(sock, (struct sockaddr *)&local, local_len) < 0) {
                 LOGE("subscribe reconnect bind failed"); close(sock); __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return;
@@ -654,9 +663,11 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
         if (need_detach) (*g_jvm)->DetachCurrentThread(g_jvm);
     }
 
-    // 原子交换 g_sub_sock，避免与 nativeStopSubscribe 的 double-close 竞态
-    int old_sock = __atomic_exchange_n(&g_sub_sock, -1, __ATOMIC_ACQ_REL);
-    if (old_sock >= 0) close(old_sock);
+    // 原子交换 g_sub_sock，仅当代数匹配时才关闭
+    if (my_gen == __atomic_load_n(&g_sub_gen, __ATOMIC_ACQUIRE) - 1) {
+        int old_sock = __atomic_exchange_n(&g_sub_sock, -1, __ATOMIC_ACQ_REL);
+        if (old_sock >= 0) close(old_sock);
+    }
     __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE);
 }
 
@@ -664,6 +675,18 @@ JNIEXPORT void JNICALL
 Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeStopSubscribe(
     JNIEnv *env, jclass clazz) {
     __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE);
+
+    // 先原子交换拿到 fd 所有权，再发 UNSUBSCRIBE + close，消除竞态
     int fd = __atomic_exchange_n(&g_sub_sock, -1, __ATOMIC_ACQ_REL);
-    if (fd >= 0) close(fd);
+    if (fd >= 0) {
+        struct sockaddr_un dest;
+        memset(&dest, 0, sizeof(dest));
+        dest.sun_family = AF_UNIX;
+        dest.sun_path[0] = '\0';
+        strncpy(dest.sun_path + 1, CONFIG_BROADCAST_SOCKET, sizeof(dest.sun_path) - 2);
+        socklen_t dest_len = offsetof(struct sockaddr_un, sun_path) + 1 + strlen(CONFIG_BROADCAST_SOCKET);
+        sendto(fd, "UNSUBSCRIBE", 11, MSG_NOSIGNAL,
+               (struct sockaddr *)&dest, dest_len);
+        close(fd);
+    }
 }
