@@ -163,10 +163,13 @@
     <string name="remote_template_redirects">重定向：%d 条规则</string>
     <string name="remote_template_source">来源：%s</string>
     <string name="remote_template_sandbox">沙盒：已启用</string>
+    <string name="remote_template_injected_only">仅已注入应用</string>
     <string name="remote_template_all_apps">所有应用</string>
     <string name="remote_template_redirect_item">%s → %s</string>
     <string name="remote_template_redirect_resolved">↳ %s</string>
     <string name="remote_template_allow_paths">放行路径：%s</string>
+    <string name="remote_diagnostic">诊断</string>
+    <string name="remote_subscribe_status">订阅状态</string>
     <string name="remote_label">远程</string>
     <string name="template_scope_global">全局</string>
     <string name="template_scope_passive">被动</string>

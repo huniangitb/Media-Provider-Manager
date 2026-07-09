@@ -148,7 +148,7 @@ static char* transform_templates(const char *src) {
 
     /* Unquoted field names to strip (injector-internal) */
     static const char *injector_fields[] = {
-        "global_inject", "fuse_direct", "monitor", "inject_enable", NULL
+        "fuse_direct", "monitor", "inject_enable", NULL
     };
 
     int depth = 0;      /* {} nesting */

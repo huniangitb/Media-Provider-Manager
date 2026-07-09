@@ -143,10 +143,13 @@
     <string name="remote_template_redirects">重新導向：%d 條規則</string>
     <string name="remote_template_source">來源：%s</string>
     <string name="remote_template_sandbox">沙盒：已啟用</string>
+    <string name="remote_template_injected_only">僅已注入應用</string>
     <string name="remote_template_all_apps">所有應用</string>
     <string name="remote_template_redirect_item">%s → %s</string>
     <string name="remote_template_redirect_resolved">↳ %s</string>
     <string name="remote_template_allow_paths">放行路徑：%s</string>
+    <string name="remote_diagnostic">診斷</string>
+    <string name="remote_subscribe_status">訂閱狀態</string>
     <string name="remote_label">遠端</string>
     <string name="template_scope_global">全局</string>
     <string name="template_scope_passive">被動</string>
