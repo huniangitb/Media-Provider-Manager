@@ -90,9 +90,18 @@ fun AppDetailScreen(
     onEditTemplate: (Template) -> Unit,
     binderViewModel: BinderViewModel,
 ) {
-    val appTemplates = templates.filter { packageName in (it.applyToApp ?: emptyList()) }
-    val availableTemplates = templates.filter { 
-        packageName !in (it.applyToApp ?: emptyList()) && it.source != "remote" 
+    val hasExplicitTemplate = templates.any { t ->
+        t.applyToApp?.let { packageName in it } == true
+    }
+    val appTemplates = templates.filter { template ->
+        val apps = template.applyToApp ?: emptyList()
+        packageName in apps ||
+                ("*" in apps && template.globalInject) ||
+                ("*" in apps && !template.globalInject && hasExplicitTemplate)
+    }
+    val availableTemplates = templates.filter { template ->
+        val apps = template.applyToApp ?: emptyList()
+        packageName !in apps && "*" !in apps && template.source != "remote"
     }
     val context = LocalContext.current
     val packageInfo = remember(packageName, binderViewModel) {
@@ -333,10 +342,11 @@ private fun AppliedTemplateCard(
     onRemove: () -> Unit,
 ) {
     val context = LocalContext.current
+    val isGlobal = "*" in (template.applyToApp ?: emptyList())
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = template.source != "remote", onClick = onClick),
+            .clickable(enabled = template.source != "remote" && !isGlobal, onClick = onClick),
         colors = androidx.compose.material3.CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
@@ -409,7 +419,7 @@ private fun AppliedTemplateCard(
                     )
                 }
             }
-            if (template.source != "remote") {
+            if (template.source != "remote" && !isGlobal) {
                 IconButton(onClick = onRemove) {
                     Icon(
                         Icons.Default.Delete,

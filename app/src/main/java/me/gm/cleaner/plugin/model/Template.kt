@@ -134,9 +134,9 @@ class Templates(json: String?, private val remoteValues: List<Template> = emptyL
                                 template.allowPaths.isNullOrEmpty() &&
                                 !template.enableSandbox)
             }
-            // 检查此包是否有显式（非通配符）模板匹配
+            // 检查此包是否有显式模板匹配
             val hasExplicit = filtered.any { t ->
-                t.applyToApp?.let { packageName in it && "*" !in it } == true
+                t.applyToApp?.let { packageName in it } == true
             }
             val explicitOrGlobal = mutableListOf<Template>()
             val passiveGlobal = mutableListOf<Template>()
@@ -206,12 +206,13 @@ class Templates(json: String?, private val remoteValues: List<Template> = emptyL
         templates: List<Template>, dataList: List<String>, mimeTypeList: List<String>
     ): List<Boolean> =
         dataList.zip(mimeTypeList).map { (data, mimeType) ->
+            // 全局放行检查：任一模板的 allowPaths 匹配 → 此路径不受任何限制
+            if (templates.any { t ->
+                    t.allowPaths?.any { FileUtils.contains(resolvePath(it), data) } == true
+                }) return@map false
+            // 拒绝检查：任一模板拒绝则拦截
             templates.any { template ->
-                // 放行路径：此路径下的文件不受任何限制
-                if (template.allowPaths?.any { FileUtils.contains(resolvePath(it), data) } == true) {
-                    return@any false
-                }
-                // 沙盒开启 → 拒绝所有媒体类型，仅受 allowPaths 限制
+                // 沙盒开启 → 拒绝所有媒体类型
                 if (template.enableSandbox) {
                     return@any true
                 }
