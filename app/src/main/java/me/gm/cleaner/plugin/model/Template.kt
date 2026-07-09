@@ -39,6 +39,8 @@ data class Template(
     @field:SerializedName("allow_paths") val allowPaths: List<String>? = null,
     // 重定向规则：source → target 路径映射
     @field:SerializedName("redirect_rules") val redirectRules: List<RedirectRule>? = null,
+    // 是否注入到所有应用（false 时仅注入到有显式模板的应用）
+    @field:SerializedName("global_inject") val globalInject: Boolean = true,
     // 配置来源标记："local" 或 "remote"，不参与序列化
     @Transient val source: String = "local",
 ) {
@@ -121,10 +123,10 @@ class Templates(json: String?, private val remoteValues: List<Template> = emptyL
         
         // Get or compute value
         val result = filteredCache.getOrPut(cacheKey) {
-            mergedValues.filter { template ->
+            // 先过滤：匹配操作类型 + 剔除无规则的空模板
+            val filtered = mergedValues.filter { template ->
                 template.hookOperation.contains(operation) &&
-                        template.applyToApp?.let { "*" in it || it.contains(packageName) } == true &&
-                        // 剔除无任何规则的空模板，避免影响全局规则生效或产生无意义缓存条目
+                        // 剔除无任何规则的空模板，避免影响规则生效或产生无意义缓存条目
                         !(template.permittedMediaTypes.isNullOrEmpty() &&
                                 template.filterPath.isNullOrEmpty() &&
                                 template.readOnlyPaths.isNullOrEmpty() &&
@@ -132,6 +134,25 @@ class Templates(json: String?, private val remoteValues: List<Template> = emptyL
                                 template.allowPaths.isNullOrEmpty() &&
                                 !template.enableSandbox)
             }
+            // 检查此包是否有显式（非通配符）模板匹配
+            val hasExplicit = filtered.any { t ->
+                t.applyToApp?.let { packageName in it && "*" !in it } == true
+            }
+            val explicitOrGlobal = mutableListOf<Template>()
+            val passiveGlobal = mutableListOf<Template>()
+            for (template in filtered) {
+                val apps = template.applyToApp ?: emptyList()
+                when {
+                    // 显式匹配：包名在列表中
+                    apps.contains(packageName) -> explicitOrGlobal.add(template)
+                    // 传统全局：* 且 globalInject 为 true（默认）
+                    "*" in apps && template.globalInject -> explicitOrGlobal.add(template)
+                    // 被动全局：* 且 globalInject == false，仅当此包有显式模板时才注入
+                    "*" in apps && !template.globalInject && hasExplicit -> passiveGlobal.add(template)
+                }
+            }
+            // 显式/传统全局在前 → 被动全局在后（优先级：被动全局规则作为附加限制，最低）
+            explicitOrGlobal + passiveGlobal
         }
         
         // Update access order for LRU eviction
