@@ -77,6 +77,7 @@ import me.gm.cleaner.plugin.ui.screens.templating.templateAllowPathSummary
 import me.gm.cleaner.plugin.ui.screens.templating.templateFilterPathSummary
 import me.gm.cleaner.plugin.ui.screens.templating.templateMediaTypeSummary
 import me.gm.cleaner.plugin.ui.screens.templating.templateOperationSummary
+import me.gm.cleaner.plugin.ui.screens.templating.templateScopeLabel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,9 +90,18 @@ fun AppDetailScreen(
     onEditTemplate: (Template) -> Unit,
     binderViewModel: BinderViewModel,
 ) {
-    val appTemplates = templates.filter { packageName in (it.applyToApp ?: emptyList()) }
-    val availableTemplates = templates.filter { 
-        packageName !in (it.applyToApp ?: emptyList()) && it.source != "remote" 
+    val hasExplicitTemplate = templates.any { t ->
+        t.applyToApp?.let { packageName in it } == true
+    }
+    val appTemplates = templates.filter { template ->
+        val apps = template.applyToApp ?: emptyList()
+        packageName in apps ||
+                ("*" in apps && template.globalInject) ||
+                ("*" in apps && !template.globalInject && hasExplicitTemplate)
+    }
+    val availableTemplates = templates.filter { template ->
+        val apps = template.applyToApp ?: emptyList()
+        packageName !in apps && "*" !in apps && template.source != "remote"
     }
     val context = LocalContext.current
     val packageInfo = remember(packageName, binderViewModel) {
@@ -332,10 +342,11 @@ private fun AppliedTemplateCard(
     onRemove: () -> Unit,
 ) {
     val context = LocalContext.current
+    val isGlobal = "*" in (template.applyToApp ?: emptyList())
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = template.source != "remote", onClick = onClick),
+            .clickable(enabled = template.source != "remote" && !isGlobal, onClick = onClick),
         colors = androidx.compose.material3.CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
@@ -355,6 +366,16 @@ private fun AppliedTemplateCard(
                         SuggestionChip(
                             onClick = {},
                             label = { Text(stringResource(R.string.remote_label)) },
+                            border = null,
+                        )
+                    }
+                    // 全局范围标签
+                    templateScopeLabel(context, template)?.let { label ->
+                        if (template.source != "remote") Spacer(Modifier.size(8.dp))
+                        Spacer(Modifier.size(8.dp))
+                        SuggestionChip(
+                            onClick = {},
+                            label = { Text(label) },
                             border = null,
                         )
                     }
@@ -398,7 +419,7 @@ private fun AppliedTemplateCard(
                     )
                 }
             }
-            if (template.source != "remote") {
+            if (template.source != "remote" && !isGlobal) {
                 IconButton(onClick = onRemove) {
                     Icon(
                         Icons.Default.Delete,
@@ -431,10 +452,21 @@ private fun AvailableTemplateCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = template.templateName,
-                    style = MaterialTheme.typography.bodyLarge,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = template.templateName,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    // 全局范围标签
+                    templateScopeLabel(context, template)?.let { label ->
+                        Spacer(Modifier.size(8.dp))
+                        SuggestionChip(
+                            onClick = {},
+                            label = { Text(label) },
+                            border = null,
+                        )
+                    }
+                }
                 Text(
                     text = templateOperationSummary(context, template),
                     style = MaterialTheme.typography.bodyMedium,

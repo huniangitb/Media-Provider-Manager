@@ -654,8 +654,9 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
         if (need_detach) (*g_jvm)->DetachCurrentThread(g_jvm);
     }
 
-    close(sock);
-    __atomic_store_n(&g_sub_sock, -1, __ATOMIC_RELEASE);
+    // 原子交换 g_sub_sock，避免与 nativeStopSubscribe 的 double-close 竞态
+    int old_sock = __atomic_exchange_n(&g_sub_sock, -1, __ATOMIC_ACQ_REL);
+    if (old_sock >= 0) close(old_sock);
     __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE);
 }
 

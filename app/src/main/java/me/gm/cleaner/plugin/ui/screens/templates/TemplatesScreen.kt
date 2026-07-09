@@ -49,6 +49,7 @@ import me.gm.cleaner.plugin.ui.components.SectionHeader
 import me.gm.cleaner.plugin.ui.screens.templating.templateFilterPathSummary
 import me.gm.cleaner.plugin.ui.screens.templating.templateMediaTypeSummary
 import me.gm.cleaner.plugin.ui.screens.templating.templateOperationSummary
+import me.gm.cleaner.plugin.ui.screens.templating.templateScopeLabel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -180,6 +181,16 @@ private fun TemplateItem(
                         SuggestionChip(
                             onClick = {},
                             label = { Text(stringResource(R.string.remote_label)) },
+                            border = null,
+                        )
+                    }
+                    // 全局范围标签
+                    templateScopeLabel(context, template)?.let { label ->
+                        if (template.source != "remote") Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(8.dp))
+                        SuggestionChip(
+                            onClick = {},
+                            label = { Text(label) },
                             border = null,
                         )
                     }

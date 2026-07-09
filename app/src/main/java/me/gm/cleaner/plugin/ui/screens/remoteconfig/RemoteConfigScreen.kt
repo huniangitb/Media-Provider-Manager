@@ -49,6 +49,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -74,6 +76,7 @@ import me.gm.cleaner.plugin.ui.components.PreferenceGroup
 import me.gm.cleaner.plugin.ui.components.SecondaryTopBar
 import me.gm.cleaner.plugin.ui.components.SectionHeader
 import me.gm.cleaner.plugin.ui.module.BinderViewModel
+import me.gm.cleaner.plugin.ui.screens.templating.templateScopeLabel
 import me.gm.cleaner.plugin.util.collatorComparator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -442,6 +445,17 @@ private fun RemoteTemplateCard(template: Template) {
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
             )
+            // 全局范围标签
+            templateScopeLabel(context, template)?.let { label ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.width(4.dp))
+                    SuggestionChip(
+                        onClick = {},
+                        label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                        border = null,
+                    )
+                }
+            }
             if (template.enableSandbox) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
