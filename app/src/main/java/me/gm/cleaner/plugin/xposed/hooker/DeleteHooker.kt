@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
+ *     required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
@@ -24,8 +24,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore.Files.FileColumns
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedHelpers
+import io.github.libxposed.api.XposedInterface
 import me.gm.cleaner.plugin.R
 import me.gm.cleaner.plugin.dao.MediaProviderOperation.Companion.OP_DELETE
 import me.gm.cleaner.plugin.dao.MediaProviderRecord
@@ -33,24 +32,25 @@ import me.gm.cleaner.plugin.util.L
 import me.gm.cleaner.plugin.xposed.ManagerService
 import me.gm.cleaner.plugin.xposed.util.MimeUtils
 import java.io.File
+import java.lang.reflect.InvocationTargetException
 
-class DeleteHooker(private val service: ManagerService) : XC_MethodHook(), MediaProviderHooker {
+class DeleteHooker(private val service: ManagerService) : XposedInterface.Hooker, MediaProviderHooker {
     @Throws(Throwable::class)
-    override fun beforeHookedMethod(param: MethodHookParam) {
-        if (param.isFuseThread || param.isSystemCallingPackage) {
-            return
+    override fun intercept(chain: XposedInterface.Chain): Any? {
+        if (chain.isFuseThread || chain.isSystemCallingPackage) {
+            return chain.proceed()
         }
         /** ARGUMENTS */
-        val uri = param.args[0] as Uri
-        val extras = param.args[1] as? Bundle ?: Bundle.EMPTY
-        dlog("deleteInternal called: uri=$uri, callingPackage=${param.callingPackage}")
+        val uri = chain.getArg(0) as Uri
+        val extras = chain.getArgs().getOrNull(1) as? Bundle ?: Bundle.EMPTY
+        dlog("deleteInternal called: uri=$uri, callingPackage=${chain.callingPackage}")
         val userWhere: String? = try {
             when {
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> extras?.getString(
                     QUERY_ARG_SQL_SELECTION
                 )
 
-                Build.VERSION.SDK_INT == Build.VERSION_CODES.Q -> param.args[1] as? String
+                Build.VERSION.SDK_INT == Build.VERSION_CODES.Q -> chain.getArg(1) as? String
                 else -> throw UnsupportedOperationException()
             }
         } catch (t: Throwable) {
@@ -64,7 +64,7 @@ class DeleteHooker(private val service: ManagerService) : XC_MethodHook(), Media
                 )
 
                 Build.VERSION.SDK_INT == Build.VERSION_CODES.Q ->
-                    (param.args[2] as? Array<*>)?.mapNotNull { it as? String }?.toTypedArray()
+                    (chain.getArgs().getOrNull(2) as? Array<*>)?.mapNotNull { it as? String }?.toTypedArray()
                 else -> throw UnsupportedOperationException()
             }
         } catch (t: Throwable) {
@@ -73,11 +73,12 @@ class DeleteHooker(private val service: ManagerService) : XC_MethodHook(), Media
         }
 
         /** PARSE */
+        val thisObj = chain.thisObject ?: return chain.proceed()
         val match = try {
-            param.matchUri(uri, param.isCallingPackageAllowedHidden)
+            chain.matchUri(uri, chain.isCallingPackageAllowedHidden)
         } catch (t: Throwable) {
             dlog("Error matching URI: $t")
-            return
+            return chain.proceed()
         }
         dlog("Matched table: $match")
         val data = mutableListOf<String>()
@@ -86,31 +87,39 @@ class DeleteHooker(private val service: ManagerService) : XC_MethodHook(), Media
             MediaTables.AUDIO_MEDIA_ID, MediaTables.VIDEO_MEDIA_ID, MediaTables.IMAGES_MEDIA_ID -> {
                 try {
                     when {
-                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> XposedHelpers.callMethod(
-                            param.thisObject, "enforceCallingPermission", uri, extras, true
-                        )
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                            val enforceCallingPermission = thisObj.javaClass
+                                .getDeclaredMethod("enforceCallingPermission", Uri::class.java, Bundle::class.java, Boolean::class.java)
+                            enforceCallingPermission.isAccessible = true
+                            enforceCallingPermission.invoke(thisObj, uri, extras, true)
+                        }
 
-                        Build.VERSION.SDK_INT == Build.VERSION_CODES.Q -> XposedHelpers.callMethod(
-                            param.thisObject, "enforceCallingPermission", uri, true
-                        )
+                        Build.VERSION.SDK_INT == Build.VERSION_CODES.Q -> {
+                            val enforceCallingPermission = thisObj.javaClass
+                                .getDeclaredMethod("enforceCallingPermission", Uri::class.java, Boolean::class.java)
+                            enforceCallingPermission.isAccessible = true
+                            enforceCallingPermission.invoke(thisObj, uri, true)
+                        }
                     }
-                } catch (e: XposedHelpers.InvocationTargetError) {
-                    if (e.cause is RecoverableSecurityException) {
+                } catch (e: InvocationTargetException) {
+                    if (e.targetException is RecoverableSecurityException) {
                         // Give callers interacting with a specific media item a chance to
                         // escalate access if they don't already have it
-                        return
+                        return chain.proceed()
                     }
                 }
 
-                val qb = callGetQueryBuilderDelete(param.thisObject, TYPE_DELETE, match, uri, extras)
-                if (qb == null) return
+                val qb = callGetQueryBuilderDelete(thisObj, TYPE_DELETE, match, uri, extras)
+                if (qb == null) return chain.proceed()
                 val helper = try {
-                    XposedHelpers.callMethod(param.thisObject, "getDatabaseForUri", uri)
+                    val getDbForUri = thisObj.javaClass.getDeclaredMethod("getDatabaseForUri", Uri::class.java)
+                    getDbForUri.isAccessible = true
+                    getDbForUri.invoke(thisObj, uri)
                 } catch (t: Throwable) {
                     dlog("Error calling getDatabaseForUri in DeleteHooker: $t")
                     null
                 }
-                if (helper == null) return
+                if (helper == null) return chain.proceed()
                 val projection = arrayOf(
                     FileColumns.MEDIA_TYPE,
                     FileColumns.DATA,
@@ -120,22 +129,27 @@ class DeleteHooker(private val service: ManagerService) : XC_MethodHook(), Media
                 )
 
                 val c = when {
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> XposedHelpers.callMethod(
-                        qb, "query", helper, projection, userWhere, userWhereArgs,
-                        null, null, null, null, null
-                    )
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                        val qbQuery = qb.javaClass.getDeclaredMethod("query", Any::class.java, Array<Any?>::class.java, String::class.java, Array<String>::class.java, String::class.java, String::class.java, String::class.java, String::class.java, Any::class.java)
+                        qbQuery.isAccessible = true
+                        qbQuery.invoke(qb, helper, projection, userWhere, userWhereArgs,
+                            null, null, null, null, null)
+                    }
 
-                    Build.VERSION.SDK_INT == Build.VERSION_CODES.Q -> XposedHelpers.callMethod(
-                        qb, "query", XposedHelpers.callMethod(helper, "getWritableDatabase"),
-                        projection, userWhere, userWhereArgs, null, null, null, null, null
-                    )
+                    Build.VERSION.SDK_INT == Build.VERSION_CODES.Q -> {
+                        val getWritableDb = helper.javaClass.getDeclaredMethod("getWritableDatabase")
+                        getWritableDb.isAccessible = true
+                        val db = getWritableDb.invoke(helper)
+                        val qbQuery = qb.javaClass.getDeclaredMethod("query", Any::class.java, Array<Any?>::class.java, String::class.java, Array<String>::class.java, String::class.java, String::class.java, String::class.java, String::class.java, Any::class.java)
+                        qbQuery.isAccessible = true
+                        qbQuery.invoke(qb, db, projection, userWhere, userWhereArgs, null, null, null, null, null)
+                    }
 
                     else -> throw UnsupportedOperationException()
                 } as Cursor
                 try {
                     if (c.count == 0) {
-                        // deleting nothing.
-                        return
+                        return chain.proceed()
                     }
                     while (c.moveToNext()) {
                         data += c.getString(1)
@@ -151,17 +165,16 @@ class DeleteHooker(private val service: ManagerService) : XC_MethodHook(), Media
                 data.mapTo(mimeType) { MimeUtils.resolveMimeType(File(it)) }
             }
 
-            else -> return // We don't care about these data, just ignore.
+            else -> return chain.proceed() // We don't care about these data, just ignore.
         }
 
         // 只读路径检查：阻止删除 readOnlyPaths 中的文件
         try {
             val hasReadOnly = data.any { d ->
-                service.ruleSp.templates.isReadOnlyPath(d, param.callingPackage)
+                service.ruleSp.templates.isReadOnlyPath(d, chain.callingPackage)
             }
             if (hasReadOnly) {
-                param.result = 0
-                return
+                return 0
             }
         } catch (e: Exception) {
             L.e("DeleteHooker", "isReadOnlyPath failed", e)
@@ -178,7 +191,7 @@ class DeleteHooker(private val service: ManagerService) : XC_MethodHook(), Media
                 MediaProviderRecord(
                     0,
                     System.currentTimeMillis(),
-                    param.callingPackage,
+                    chain.callingPackage,
                     match,
                     OP_DELETE,
                     data,
@@ -187,6 +200,8 @@ class DeleteHooker(private val service: ManagerService) : XC_MethodHook(), Media
                 )
             )
         }
+
+        return chain.proceed()
     }
 
     private val TYPE_DELETE: Int = when {

@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
+ *     required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
@@ -25,8 +25,7 @@ import android.os.Environment
 import android.os.FileUtils
 import android.provider.MediaStore
 import android.text.TextUtils
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedHelpers
+import io.github.libxposed.api.XposedInterface
 import me.gm.cleaner.plugin.R
 import me.gm.cleaner.plugin.dao.MediaProviderOperation.Companion.OP_INSERT
 import me.gm.cleaner.plugin.dao.MediaProviderRecord
@@ -35,67 +34,67 @@ import me.gm.cleaner.plugin.xposed.util.MimeUtils
 import java.io.File
 import java.util.*
 
-class InsertHooker(private val service: ManagerService) : XC_MethodHook(), MediaProviderHooker {
+class InsertHooker(private val service: ManagerService) : XposedInterface.Hooker, MediaProviderHooker {
     @Throws(Throwable::class)
-    override fun beforeHookedMethod(param: MethodHookParam) {
-        if (param.isFuseThread || param.isSystemCallingPackage) {
-            return
+    override fun intercept(chain: XposedInterface.Chain): Any? {
+        if (chain.isFuseThread || chain.isSystemCallingPackage) {
+            return chain.proceed()
         }
         /** ARGUMENTS */
-        dlog("insertFile called. Args size: ${param.args.size}")
-        param.args.forEachIndexed { index, arg ->
+        dlog("insertFile called. Args size: ${chain.args.size}")
+        chain.args.forEachIndexed { index, arg ->
             dlog("arg[$index]: ${arg?.javaClass?.name} = $arg")
         }
 
         val match = try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) param.args[2] else param.args[1]
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) chain.getArg(2) else chain.getArg(1)
         } catch (t: Throwable) {
             dlog("Error getting match arg: $t")
             null
-        } as? Int ?: return
+        } as? Int ?: return chain.proceed()
 
         val uri = try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) param.args[3] else param.args[2]
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) chain.getArg(3) else chain.getArg(2)
         } catch (t: Throwable) {
             dlog("Error getting uri arg: $t")
             null
-        } as? Uri ?: return
+        } as? Uri ?: return chain.proceed()
 
         val extras = try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) param.args[4] else Bundle.EMPTY
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) chain.getArg(4) else Bundle.EMPTY
         } catch (t: Throwable) {
             dlog("Error getting extras arg: $t")
             Bundle.EMPTY
         } as Bundle
 
         val values = try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) param.args[5] else param.args[3]
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) chain.getArg(5) else chain.getArg(3)
         } catch (t: Throwable) {
             dlog("Error getting values arg: $t")
             null
-        } as? ContentValues ?: return
+        } as? ContentValues ?: return chain.proceed()
 
         val mediaType = try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) param.args[6] else param.args[4]
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) chain.getArg(6) else chain.getArg(4)
         } catch (t: Throwable) {
             dlog("Error getting mediaType arg: $t")
-            return
+            return chain.proceed()
         } as Int
 
         // Android 16 compatibility: Skip if this is an Android/data directory operation
-        // to avoid interfering with app private storage directory creation
         val relativePath = values.getAsString(MediaStore.MediaColumns.RELATIVE_PATH)
         if (isAndroidDataOperation(relativePath)) {
             dlog("Skipping Android/data directory operation: $relativePath")
-            return
+            return chain.proceed()
         }
 
         /** PARSE */
         var mimeType = values.getAsString(MediaStore.MediaColumns.MIME_TYPE)
         val wasPathEmpty = wasPathEmpty(values)
+        val thisObj = chain.thisObject ?: return chain.proceed()
         if (wasPathEmpty) {
             // Generate path when undefined
-            ensureUniqueFileColumns(param.thisObject, match, uri, values, mimeType)
+            ensureUniqueFileColumns(thisObj, match, uri, values, mimeType)
         }
         val data = values.getAsString(MediaStore.MediaColumns.DATA)
         if (mimeType.isNullOrEmpty()) {
@@ -109,26 +108,24 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
         }
 
         /** INTERCEPT */
-        val filteredTemplates = service.ruleSp.templates.getFilteredTemplates(javaClass, param.callingPackage)
+        val filteredTemplates = service.ruleSp.templates.getFilteredTemplates(javaClass, chain.callingPackage)
         val shouldIntercept = service.ruleSp.templates
             .applyTemplates(filteredTemplates, listOf(data), listOf(mimeType)).first()
         if (shouldIntercept) {
-            param.result = null
-            return
+            return null
         }
 
         // 只读路径检查：若 data 在 readOnlyPaths 中则拒绝写入
         if (!data.isNullOrEmpty()) {
             try {
-                if (service.ruleSp.templates.isReadOnlyPath(data, param.callingPackage)) {
-                    param.result = null
-                    return
+                if (service.ruleSp.templates.isReadOnlyPath(data, chain.callingPackage)) {
+                    return null
                 }
             } catch (_: Exception) {}
 
             // 重定向：若 data 匹配 redirect_rules.source，改写 values[DATA] 为 target
             try {
-                val redirectData = service.ruleSp.templates.resolveRedirect(data, param.callingPackage)
+                val redirectData = service.ruleSp.templates.resolveRedirect(data, chain.callingPackage)
                 if (redirectData != data) {
                     values.put(MediaStore.MediaColumns.DATA, redirectData)
                 }
@@ -144,7 +141,7 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
                 MediaProviderRecord(
                     0,
                     System.currentTimeMillis(),
-                    param.callingPackage,
+                    chain.callingPackage,
                     match,
                     OP_INSERT,
                     listOf(data),
@@ -153,17 +150,14 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
                 )
             )
         }
+
+        return chain.proceed()
     }
 
     private fun wasPathEmpty(values: ContentValues) =
         !values.containsKey(MediaStore.MediaColumns.DATA)
                 || values.getAsString(MediaStore.MediaColumns.DATA).isEmpty()
 
-    /**
-     * Check if the operation targets Android/data or Android/obb directories.
-     * These are app-private storage directories that should not be intercepted
-     * to avoid breaking app storage access on Android 16+.
-     */
     private fun isAndroidDataOperation(relativePath: String?): Boolean {
         if (relativePath.isNullOrEmpty()) return false
         val normalizedPath = relativePath.lowercase().trimEnd('/')
@@ -238,29 +232,34 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
-                val resolvedVolumeName = XposedHelpers.callMethod(
-                    thisObject, "resolveVolumeName", uri
-                ) as String
-                val volumePath = XposedHelpers.callMethod(
-                    thisObject, "getVolumePath", resolvedVolumeName
-                ) as File
+                val resolveVolumeName = thisObject.javaClass.getDeclaredMethod("resolveVolumeName", Uri::class.java)
+                resolveVolumeName.isAccessible = true
+                val resolvedVolumeName = resolveVolumeName.invoke(thisObject, uri) as String
 
-                val fileUtilsClass = XposedHelpers.findClass(
-                    "com.android.providers.media.util.FileUtils", service.classLoader
+                val getVolumePath = thisObject.javaClass.getDeclaredMethod("getVolumePath", String::class.java)
+                getVolumePath.isAccessible = true
+                val volumePath = getVolumePath.invoke(thisObject, resolvedVolumeName) as File
+
+                val fileUtilsClass = Class.forName(
+                    "com.android.providers.media.util.FileUtils", false, service.classLoader
                 )
-                val isFuseThread = XposedHelpers.callMethod(thisObject, "isFuseThread")
-                        as Boolean
-                XposedHelpers.callStaticMethod(
-                    fileUtilsClass, "sanitizeValues", values, !isFuseThread
-                )
-                XposedHelpers.callStaticMethod(
-                    fileUtilsClass, "computeDataFromValues", values, volumePath, isFuseThread
-                )
+                val isFuseThread = thisObject.javaClass.getDeclaredMethod("isFuseThread")
+                isFuseThread.isAccessible = true
+                val isFuse = isFuseThread.invoke(thisObject) as Boolean
+
+                val sanitizeValues = fileUtilsClass.getDeclaredMethod("sanitizeValues", ContentValues::class.java, Boolean::class.java)
+                sanitizeValues.isAccessible = true
+                sanitizeValues.invoke(null, values, !isFuse)
+
+                val computeDataFromValues = fileUtilsClass.getDeclaredMethod("computeDataFromValues", ContentValues::class.java, File::class.java, Boolean::class.java)
+                computeDataFromValues.isAccessible = true
+                computeDataFromValues.invoke(null, values, volumePath, isFuse)
 
                 var res = File(values.getAsString(MediaStore.MediaColumns.DATA))
-                res = XposedHelpers.callStaticMethod(
-                    fileUtilsClass, "buildUniqueFile", res.parentFile, mimeType, res.name
-                ) as File
+
+                val buildUniqueFile = fileUtilsClass.getDeclaredMethod("buildUniqueFile", File::class.java, String::class.java, String::class.java)
+                buildUniqueFile.isAccessible = true
+                res = buildUniqueFile.invoke(null, res.parentFile, mimeType, res.name) as File
 
                 values.put(MediaStore.MediaColumns.DATA, res.absolutePath)
             } catch (t: Throwable) {
@@ -270,28 +269,33 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
                 return
             }
         } else {
-            val resolvedVolumeName = XposedHelpers.callMethod(
-                thisObject, "resolveVolumeName", uri
-            ) as String
+            val resolveVolumeName = thisObject.javaClass.getDeclaredMethod("resolveVolumeName", Uri::class.java)
+            resolveVolumeName.isAccessible = true
+            val resolvedVolumeName = resolveVolumeName.invoke(thisObject, uri) as String
 
-            val relativePath = XposedHelpers.callMethod(
-                thisObject, "sanitizePath",
+            val sanitizePath = thisObject.javaClass.getDeclaredMethod("sanitizePath", String::class.java)
+            sanitizePath.isAccessible = true
+            val relativePath = sanitizePath.invoke(thisObject,
                 values.getAsString(MediaStore.MediaColumns.RELATIVE_PATH)
             )
-            val displayName = XposedHelpers.callMethod(
-                thisObject, "sanitizeDisplayName",
+
+            val sanitizeDisplayName = thisObject.javaClass.getDeclaredMethod("sanitizeDisplayName", String::class.java)
+            sanitizeDisplayName.isAccessible = true
+            val displayName = sanitizeDisplayName.invoke(thisObject,
                 values.getAsString(MediaStore.MediaColumns.DISPLAY_NAME)
             )
 
-            var res = XposedHelpers.callMethod(
-                thisObject, "getVolumePath", resolvedVolumeName
-            ) as File
-            res = XposedHelpers.callStaticMethod(
-                Environment::class.java, "buildPath", res, relativePath
-            ) as File
-            res = XposedHelpers.callStaticMethod(
-                FileUtils::class.java, "buildUniqueFile", res, mimeType, displayName
-            ) as File
+            val getVolumePath = thisObject.javaClass.getDeclaredMethod("getVolumePath", String::class.java)
+            getVolumePath.isAccessible = true
+            var res = getVolumePath.invoke(thisObject, resolvedVolumeName) as File
+
+            val buildPath = Environment::class.java.getDeclaredMethod("buildPath", File::class.java, Any::class.java)
+            buildPath.isAccessible = true
+            res = buildPath.invoke(null, res, relativePath) as File
+
+            val buildUniqueFile = FileUtils::class.java.getDeclaredMethod("buildUniqueFile", File::class.java, String::class.java, String::class.java)
+            buildUniqueFile.isAccessible = true
+            res = buildUniqueFile.invoke(null, res, mimeType, displayName) as File
 
             values.put(MediaStore.MediaColumns.DATA, res.absolutePath)
         }
@@ -300,13 +304,9 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
         val mimeTypeFromExt = if (TextUtils.isEmpty(displayName)) null
         else MimeUtils.resolveMimeType(File(displayName))
         if (TextUtils.isEmpty(values.getAsString(MediaStore.MediaColumns.MIME_TYPE))) {
-            // Extract the MIME type from the display name if we couldn't resolve it from the
-            // raw path
             if (mimeTypeFromExt != null) {
                 values.put(MediaStore.MediaColumns.MIME_TYPE, mimeTypeFromExt)
             } else {
-                // We couldn't resolve mimeType, it means that both display name and MIME type
-                // were missing in values, so we use defaultMimeType.
                 values.put(MediaStore.MediaColumns.MIME_TYPE, defaultMimeType)
             }
         }

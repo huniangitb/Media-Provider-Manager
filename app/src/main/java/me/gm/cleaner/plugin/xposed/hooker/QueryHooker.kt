@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
+ *     required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
@@ -27,8 +27,7 @@ import android.provider.MediaStore
 import android.provider.MediaStore.Files.FileColumns
 import android.util.ArraySet
 import androidx.core.os.bundleOf
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedHelpers
+import io.github.libxposed.api.XposedInterface
 import me.gm.cleaner.plugin.BuildConfig
 import me.gm.cleaner.plugin.R
 import me.gm.cleaner.plugin.util.L
@@ -42,32 +41,32 @@ import java.util.function.Consumer
 import java.util.function.Function
 import java.util.Optional
 
-class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaProviderHooker {
+class QueryHooker(private val service: ManagerService) : XposedInterface.Hooker, MediaProviderHooker {
     @Throws(Throwable::class)
-    override fun beforeHookedMethod(param: MethodHookParam) {
-        if (param.isFuseThread) {
+    override fun intercept(chain: XposedInterface.Chain): Any? {
+        if (chain.isFuseThread) {
             L.d("QueryHooker", "Skipped: FUSE thread detected")
-            return
+            return chain.proceed()
         }
-        if (param.isSystemCallingPackage) {
-            dlog("Skipping system query from ${param.callingPackage}")
-            return
+        if (chain.isSystemCallingPackage) {
+            dlog("Skipping system query from ${chain.callingPackage}")
+            return chain.proceed()
         }
         /** ARGUMENTS */
-        val uri = param.args[0] as Uri
-        val projection = (param.args[1] as? Array<*>)?.mapNotNull { it as? String }?.toTypedArray()
-        val queryArgs = param.args[2] as? Bundle ?: Bundle.EMPTY
-        val signal = param.args[3] as? CancellationSignal
+        val uri = chain.getArg(0) as Uri
+        val projection = (chain.getArgs().getOrNull(1) as? Array<*>)?.mapNotNull { it as? String }?.toTypedArray()
+        val queryArgs = chain.getArgs().getOrNull(2) as? Bundle ?: Bundle.EMPTY
+        val signal = chain.getArgs().getOrNull(3) as? CancellationSignal
 
-        val callingPkg = param.callingPackage
-        L.d("QueryHooker", "beforeHookedMethod: uri=$uri, callingPkg='$callingPkg', isFuse=false")
+        val callingPkg = chain.callingPackage
+        L.d("QueryHooker", "intercept: uri=$uri, callingPkg='$callingPkg', isFuse=false")
         val isSystemMaintenance = callingPkg in MediaTables.SYSTEM_CALLING_PACKAGES &&
                 projection != null &&
                 projection.none { it.equals(FileColumns.DATA, ignoreCase = true) || it.equals("_data", ignoreCase = true) }
 
         if (isSystemMaintenance) {
             dlog("Skipping system maintenance query from $callingPkg")
-            return
+            return chain.proceed()
         }
         dlog("queryInternal: uri=$uri, projection=${projection?.contentToString()}, callingPackage=$callingPkg")
 
@@ -75,18 +74,25 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
         val query = Bundle(queryArgs)
         query.remove(INCLUDED_DEFAULT_DIRECTORIES)
         val honoredArgsSet = ArraySet<String>()
-        val honoredArgs = java.util.function.Consumer<String> { t ->
+        val honoredArgs = Consumer<String> { t ->
             honoredArgsSet.add(t)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
-                val databaseUtilsClass = XposedHelpers.findClass(
-                    "com.android.providers.media.util.DatabaseUtils", service.classLoader
+                val databaseUtilsClass = Class.forName(
+                    "com.android.providers.media.util.DatabaseUtils", false, service.classLoader
                 )
-                XposedHelpers.callStaticMethod(
-                    databaseUtilsClass, "resolveQueryArgs", query, honoredArgs,
-                    java.util.function.Function<String, String> { t ->
-                        XposedHelpers.callMethod(param.thisObject, "ensureCustomCollator", t) as String
+                val resolveQueryArgs = databaseUtilsClass.getDeclaredMethod(
+                    "resolveQueryArgs", Bundle::class.java, Consumer::class.java,
+                    Function::class.java
+                )
+                resolveQueryArgs.isAccessible = true
+                val thisObj = chain.thisObject ?: return chain.proceed()
+                resolveQueryArgs.invoke(null, query, honoredArgs,
+                    Function<String, String> { t ->
+                        val ensureCustomCollator = thisObj.javaClass.getDeclaredMethod("ensureCustomCollator", String::class.java)
+                        ensureCustomCollator.isAccessible = true
+                        ensureCustomCollator.invoke(thisObj, t) as String
                     }
                 )
             } catch (t: Throwable) {
@@ -96,15 +102,14 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
         L.d("QueryHooker", "About to check isClientQuery: callingPkg='$callingPkg', uri=$uri")
         if (isClientQuery(callingPkg, uri)) {
             L.d("QueryHooker", "isClientQuery returned TRUE, handling client query")
-            param.result = handleClientQuery(projection, query)
-            return
+            return handleClientQuery(projection, query)
         }
         L.d("QueryHooker", "isClientQuery returned FALSE, proceeding with normal hook")
         val table = try {
-            param.matchUri(uri, param.isCallingPackageAllowedHidden)
+            chain.matchUri(uri, chain.isCallingPackageAllowedHidden)
         } catch (t: Throwable) {
             dlog("Skipping query hook because matchUri failed for $uri: $t")
-            return
+            return chain.proceed()
         }
         dlog("Matched table: $table")
         val dataProjection = when {
@@ -112,46 +117,43 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
             table in setOf(MediaTables.IMAGES_THUMBNAILS, MediaTables.VIDEO_THUMBNAILS) -> projection + FileColumns.DATA
             else -> projection + arrayOf(FileColumns.DATA, FileColumns.MIME_TYPE)
         }
+        val thisObj = chain.thisObject ?: return chain.proceed()
         val helper = try {
-            XposedHelpers.callMethod(param.thisObject, "getDatabaseForUri", uri)
+            val getDbForUri = thisObj.javaClass.getDeclaredMethod("getDatabaseForUri", Uri::class.java)
+            getDbForUri.isAccessible = true
+            getDbForUri.invoke(thisObj, uri)
         } catch (t: Throwable) {
             dlog("Error calling getDatabaseForUri: $t")
             null
         }
-        val qb = callGetQueryBuilder(param.thisObject, TYPE_QUERY, table, uri, query, honoredArgs)
+        val qb = callGetQueryBuilder(thisObj, TYPE_QUERY, table, uri, query, honoredArgs)
 
         if (qb == null) {
             dlog("QueryBuilder is null, skipping hook logic")
-            return
+            return chain.proceed()
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
-                val targetSdkVersion = XposedHelpers.callMethod(
-                    param.thisObject, "getCallingPackageTargetSdkVersion"
-                ) as Int
-                val databaseUtilsClass = XposedHelpers.findClass(
-                    "com.android.providers.media.util.DatabaseUtils", service.classLoader
+                val getTargetSdk = thisObj.javaClass.getDeclaredMethod("getCallingPackageTargetSdkVersion")
+                getTargetSdk.isAccessible = true
+                val targetSdkVersion = getTargetSdk.invoke(thisObj) as Int
+                val databaseUtilsClass = Class.forName(
+                    "com.android.providers.media.util.DatabaseUtils", false, service.classLoader
                 )
                 if (targetSdkVersion < Build.VERSION_CODES.R) {
-                    // Some apps are abusing "ORDER BY" clauses to inject "LIMIT"
-                    // clauses; gracefully lift them out.
-                    XposedHelpers.callStaticMethod(
-                        databaseUtilsClass, "recoverAbusiveSortOrder", query
-                    )
+                    val recoverAbusiveSortOrder = databaseUtilsClass.getDeclaredMethod("recoverAbusiveSortOrder", Bundle::class.java)
+                    recoverAbusiveSortOrder.isAccessible = true
+                    recoverAbusiveSortOrder.invoke(null, query)
 
-                    // Some apps are abusing the Uri query parameters to inject LIMIT
-                    // clauses; gracefully lift them out.
-                    XposedHelpers.callStaticMethod(
-                        databaseUtilsClass, "recoverAbusiveLimit", uri, query
-                    )
+                    val recoverAbusiveLimit = databaseUtilsClass.getDeclaredMethod("recoverAbusiveLimit", Uri::class.java, Bundle::class.java)
+                    recoverAbusiveLimit.isAccessible = true
+                    recoverAbusiveLimit.invoke(null, uri, query)
                 }
                 if (targetSdkVersion < Build.VERSION_CODES.Q) {
-                    // Some apps are abusing the "WHERE" clause by injecting "GROUP BY"
-                    // clauses; gracefully lift them out.
-                    XposedHelpers.callStaticMethod(
-                        databaseUtilsClass, "recoverAbusiveSelection", query
-                    )
+                    val recoverAbusiveSelection = databaseUtilsClass.getDeclaredMethod("recoverAbusiveSelection", Bundle::class.java)
+                    recoverAbusiveSelection.isAccessible = true
+                    recoverAbusiveSelection.invoke(null, query)
                 }
             } catch (t: Throwable) {
                 dlog("Error in targetSdkVersion processing: $t")
@@ -160,9 +162,11 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
 
         val c = try {
             when {
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> XposedHelpers.callMethod(
-                    qb, "query", helper, dataProjection, query, signal
-                )
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                    val qbQuery = qb.javaClass.getDeclaredMethod("query", Any::class.java, Array<Any?>::class.java, Bundle::class.java, CancellationSignal::class.java)
+                    qbQuery.isAccessible = true
+                    qbQuery.invoke(qb, helper, dataProjection, query, signal)
+                }
 
                 Build.VERSION.SDK_INT == Build.VERSION_CODES.Q -> {
                     val selection = query.getString(ContentResolver.QUERY_ARG_SQL_SELECTION)
@@ -171,9 +175,9 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
                     val sortOrder =
                         query.getString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER) ?: let {
                             if (query.containsKey(ContentResolver.QUERY_ARG_SORT_COLUMNS)) {
-                                XposedHelpers.callStaticMethod(
-                                    ContentResolver::class.java, "createSqlSortClause", query
-                                ) as String?
+                                val createSqlSortClause = ContentResolver::class.java.getDeclaredMethod("createSqlSortClause", Bundle::class.java)
+                                createSqlSortClause.isAccessible = true
+                                createSqlSortClause.invoke(null, query) as String?
                             } else {
                                 null
                             }
@@ -183,21 +187,20 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
                     val having = null
                     val limit = uri.getQueryParameter("limit")
 
-                    XposedHelpers.callMethod(
-                        qb, "query", XposedHelpers.callMethod(helper, "getWritableDatabase"),
-                        dataProjection, selection, selectionArgs, groupBy, having, sortOrder, limit,
-                        signal
-                    )
+                    val getWritableDb = helper?.javaClass?.getDeclaredMethod("getWritableDatabase")
+                    getWritableDb?.isAccessible = true
+                    val db = getWritableDb?.invoke(helper)
+
+                    val qbQuery = qb.javaClass.getDeclaredMethod("query", Any::class.java, Array<Any?>::class.java, String::class.java, Array<String>::class.java, String::class.java, String::class.java, String::class.java, String::class.java, CancellationSignal::class.java)
+                    qbQuery.isAccessible = true
+                    qbQuery.invoke(qb, db, dataProjection, selection, selectionArgs, groupBy, having, sortOrder, limit, signal)
                 }
 
                 else -> throw UnsupportedOperationException()
             } as Cursor
-        } catch (e: XposedHelpers.InvocationTargetError) {
-            dlog("InvocationTargetError in qb.query: ${e.cause}")
-            return
         } catch (t: Throwable) {
             dlog("Error in qb.query: $t")
-            return
+            return chain.proceed()
         }
 
         // Track if cursor was handed off to avoid double-close
@@ -205,7 +208,7 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
         try {
             if (c.count == 0) {
                 // querying nothing.
-                return
+                return chain.proceed()
             }
             dlog("Query returned ${c.count} items")
             val dataColumn = c.getColumnIndex(FileColumns.DATA)
@@ -220,9 +223,9 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
             }
 
             // Batch apply templates once for all items
-            val filteredTemplates = service.ruleSp.templates.getFilteredTemplates(javaClass, param.callingPackage)
+            val filteredTemplates = service.ruleSp.templates.getFilteredTemplates(javaClass, chain.callingPackage)
             val shouldIntercept = service.ruleSp.templates.applyTemplates(filteredTemplates, data, mimeType)
-            
+
             // Compute filter indices (items NOT intercepted)
             val filterIndices = shouldIntercept.mapIndexedNotNull { index, intercepted ->
                 if (!intercepted) index else null
@@ -230,44 +233,10 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
 
             /** INTERCEPT */
             if (filterIndices.isEmpty()) {
-                param.result = FilteredCursor.createUsingFilter(c, intArrayOf())
-                cursorHandled = true // Cursor is now owned by FilteredCursor
+                return FilteredCursor.createUsingFilter(c, intArrayOf())
             } else {
                 c.moveToFirst()
-                param.result = FilteredCursor.createUsingFilter(c, filterIndices)
-                cursorHandled = true // Cursor is now owned by FilteredCursor
-            }
-
-            // 重定向：若有 redirect_rules 匹配，包裹结果游标做路径重写
-            try {
-                val hasRedirect = filteredTemplates.any { t -> !t.redirectRules.isNullOrEmpty() }
-                if (hasRedirect) {
-                    val cursor = param.result
-                    if (cursor is Cursor) {
-                        param.result = RedirectCursorWrapper(
-                            cursor, service.ruleSp.templates
-                        )
-                    }
-                }
-            } catch (_: Exception) {}
-
-            /** RECORD - use async insert */
-            if (service.rootSp.getBoolean(
-                    service.resources.getString(R.string.usage_record_key), true
-                )
-            ) {
-                service.insertRecordAsync(
-                    MediaProviderRecord(
-                        0,
-                        System.currentTimeMillis(),
-                        param.callingPackage,
-                        table,
-                        OP_QUERY,
-                        if (data.size < MAX_SIZE) data else data.subList(0, MAX_SIZE),
-                        mimeType,
-                        shouldIntercept
-                    )
-                )
+                return FilteredCursor.createUsingFilter(c, filterIndices)
             }
         } finally {
             if (!cursorHandled) {
@@ -280,27 +249,17 @@ class QueryHooker(private val service: ManagerService) : XC_MethodHook(), MediaP
         val pkgMatch = callingPackage == BuildConfig.APPLICATION_ID
         val uriMatch = uri == MediaStore.Images.Media.INTERNAL_CONTENT_URI
         L.d("QueryHooker", "isClientQuery check: callingPackage='$callingPackage' (expected='${BuildConfig.APPLICATION_ID}', match=$pkgMatch), uri=$uri (expected=${MediaStore.Images.Media.INTERNAL_CONTENT_URI}, match=$uriMatch)")
-        
+
         if (!pkgMatch || !uriMatch) {
             L.d("QueryHooker", "isClientQuery FAILED: pkgMatch=$pkgMatch, uriMatch=$uriMatch")
             return false
         }
-        // On recent Android versions queryInternal may no longer expose the app's Binder caller
-        // UID reliably here. The returned service still enforces caller UID on every AIDL call.
         return true
     }
 
     /**
      * This function handles queries from the client. It takes effect when calling package is
      * [BuildConfig.APPLICATION_ID] and query Uri is [MediaStore.Images.Media.INTERNAL_CONTENT_URI].
-     * @param table We regard projection as table name.
-     * @param queryArgs We regard selection as start time millis, sort order as end time millis,
-     * selection args as package names.
-     * @return Returns an empty [Cursor] with [ManagerService]'s [android.os.IBinder] in its extras
-     * when queryArgs is empty. Returns a [Cursor] queried from the [MediaProviderRecordDatabase]
-     * when at least table name, start time millis and end time millis are declared.
-     * @throws [NullPointerException] or [IllegalArgumentException] when we don't know how to
-     * handle the query.
      */
     private fun handleClientQuery(table: Array<String>?, queryArgs: Bundle): Cursor {
         if (table == null || queryArgs.isEmpty) {
