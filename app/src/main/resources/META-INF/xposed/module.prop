@@ -1,7 +1,3 @@
 minApiVersion=101
 targetApiVersion=102
 staticScope=true
-scope=com.android.providers.media.module
-scope=com.android.providers.media
-scope=com.google.android.providers.media.module
-scope=com.android.providers.downloads
