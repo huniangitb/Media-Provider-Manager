@@ -16,13 +16,13 @@
 
 package me.gm.cleaner.plugin.xposed
 
-import android.app.Application
-import android.content.pm.PackageManager
+import android.content.Context
+import android.content.pm.ProviderInfo
+import android.provider.MediaStore
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
 import me.gm.cleaner.plugin.BuildConfig
 import me.gm.cleaner.plugin.util.L
-import me.gm.cleaner.plugin.util.ModuleActivationStore
 import me.gm.cleaner.plugin.xposed.hooker.DeleteHooker
 import me.gm.cleaner.plugin.xposed.hooker.FileHooker
 import me.gm.cleaner.plugin.xposed.hooker.InsertHooker
@@ -31,13 +31,12 @@ import java.io.File
 
 class XposedInit : XposedModule() {
 
-    private lateinit var service: ManagerService
+    private var service: ManagerService? = null
 
     @Throws(Throwable::class)
     override fun onModuleLoaded(param: XposedModuleInterface.ModuleLoadedParam) {
         super.onModuleLoaded(param)
         L.d("Module loaded: process=${param.processName}, isSystemServer=${param.isSystemServer}")
-        // ManagerService will be created when we have a context (in onPackageReady)
     }
 
     @Throws(Throwable::class)
@@ -49,130 +48,147 @@ class XposedInit : XposedModule() {
 
         when (packageName) {
             BuildConfig.APPLICATION_ID -> {
-                // Called when our own module app process is loaded
-                // Mark the framework as active for the UI
-                try {
-                    markModuleAppLoaded(param)
-                } catch (t: Throwable) {
-                    L.e("Failed to mark module app as hooked", t)
-                }
+                L.d("Module app package ready")
             }
 
             "com.android.providers.media.module",
             "com.android.providers.media",
             "com.google.android.providers.media.module" -> {
-                onMediaProviderLoaded(classLoader, param)
+                onMediaProviderPackageReady(classLoader)
             }
 
             "com.android.providers.downloads" -> {
-                onDownloadManagerLoaded(classLoader)
+                onDownloadManagerPackageReady(classLoader)
             }
         }
     }
 
     @Throws(Throwable::class)
-    private fun markModuleAppLoaded(param: XposedModuleInterface.PackageReadyParam) {
-        L.d("Module app package ready: ${param.getPackageName()}")
-        val classLoader = param.getClassLoader()
-        val activityThread = Class.forName("android.app.ActivityThread", false, classLoader)
-        val currentActivityThread = activityThread.getDeclaredMethod("currentActivityThread")
-        currentActivityThread.isAccessible = true
-        val at = currentActivityThread.invoke(null)
-        val getApplication = activityThread.getDeclaredMethod("getApplication")
-        getApplication.isAccessible = true
-        val app = getApplication.invoke(at) as Application
-        ModuleActivationStore.markAppProcessHooked(app)
-        L.d("Marked module app process as hooked")
-    }
-
-    @Throws(Throwable::class)
-    private fun onMediaProviderLoaded(
-        classLoader: ClassLoader,
-        param: XposedModuleInterface.PackageReadyParam
-    ) {
-        L.d("MediaProvider loaded: ${param.getPackageName()}")
-        val mediaProvider = try {
+    private fun onMediaProviderPackageReady(classLoader: ClassLoader) {
+        L.d("MediaProvider package ready, hooking attachInfo")
+        val mediaProviderClass = try {
             Class.forName("com.android.providers.media.MediaProvider", false, classLoader)
         } catch (e: ClassNotFoundException) {
             L.e("MediaProvider class not found!", e)
             return
         }
 
-        // Initialize ManagerService with the package context
-        // Note: In libxposed, the module runs in the target process,
-        // so we can access the target app's resources directly
-        if (!::service.isInitialized) {
-            service = ManagerService()
-            service.classLoader = classLoader
-        }
-
-        // Get the application context if available
+        // Hook MediaProvider.attachInfo to get the context and initialize service
+        // after the provider is fully initialized
         try {
-            val activityThread = Class.forName("android.app.ActivityThread", false, classLoader)
-            val currentActivityThread = activityThread.getDeclaredMethod("currentActivityThread")
-            currentActivityThread.isAccessible = true
-            val at = currentActivityThread.invoke(null)
-            val getApplication = activityThread.getDeclaredMethod("getApplication")
-            getApplication.isAccessible = true
-            val app = getApplication.invoke(at) as? Application
-            if (app == null) {
-                L.e("Could not get Application context (null), hooks may not work properly")
-                return
+            val attachInfoMethod = try {
+                // Try 3-param version first (Context, ProviderInfo, Boolean)
+                mediaProviderClass.getDeclaredMethod(
+                    "attachInfo",
+                    Context::class.java,
+                    ProviderInfo::class.java,
+                    Boolean::class.java
+                )
+            } catch (e: NoSuchMethodException) {
+                // Fall back to 2-param version (Context, ProviderInfo)
+                mediaProviderClass.getDeclaredMethod(
+                    "attachInfo",
+                    Context::class.java,
+                    ProviderInfo::class.java
+                )
             }
-            service.onCreate(app)
-            // Use module's own Resources (not target app's) so module R.string IDs resolve correctly
-            service.resources = try {
-                val moduleAppInfo = getModuleApplicationInfo()
-                app.packageManager.getResourcesForApplication(moduleAppInfo)
-            } catch (t: Throwable) {
-                L.e("Could not get module Resources, trying module package name", t)
-                app.packageManager.getResourcesForApplication(BuildConfig.APPLICATION_ID)
+            attachInfoMethod.isAccessible = true
+
+            hook(attachInfoMethod).intercept { chain ->
+                val context = chain.getArg(0) as Context
+                val providerInfo = chain.getArg(1) as ProviderInfo
+
+                // Only proceed for MediaStore authority
+                if (providerInfo.authority != MediaStore.AUTHORITY &&
+                    providerInfo.authority != "media" &&
+                    providerInfo.authority != "com.google.android.providers.media.module"
+                ) {
+                    return@intercept chain.proceed()
+                }
+
+                L.d("MediaProvider.attachInfo called, authority=${providerInfo.authority}")
+
+                // Let the original attachInfo run first
+                val result = chain.proceed()
+
+                // Now the provider is fully initialized, install hooks
+                try {
+                    installMediaProviderHooks(classLoader, context)
+                } catch (t: Throwable) {
+                    L.e("Error installing MediaProvider hooks", t)
+                }
+
+                result
             }
-            L.d("ManagerService initialized with Application context")
+            L.d("Hooked MediaProvider.attachInfo")
         } catch (t: Throwable) {
-            L.e("Could not get Application context, hooks may not work properly", t)
+            L.e("Error hooking MediaProvider.attachInfo", t)
+        }
+    }
+
+    @Throws(Throwable::class)
+    private fun installMediaProviderHooks(classLoader: ClassLoader, context: Context) {
+        L.d("Installing MediaProvider hooks")
+
+        val mediaProvider = try {
+            Class.forName("com.android.providers.media.MediaProvider", false, classLoader)
+        } catch (e: ClassNotFoundException) {
+            L.e("MediaProvider class not found during hook installation!", e)
             return
         }
 
+        // Initialize ManagerService
+        val mgr = ManagerService()
+        mgr.classLoader = classLoader
+        mgr.onCreate(context)
+        mgr.resources = try {
+            val moduleAppInfo = getModuleApplicationInfo()
+            context.packageManager.getResourcesForApplication(moduleAppInfo)
+        } catch (t: Throwable) {
+            L.e("Could not get module Resources, trying module package name", t)
+            context.packageManager.getResourcesForApplication(BuildConfig.APPLICATION_ID)
+        }
+        service = mgr
+        L.d("ManagerService initialized")
+
+        // Hook methods
         try {
-            // Hook queryInternal - match all overloads
             for (method in mediaProvider.declaredMethods) {
                 when (method.name) {
                     "queryInternal" -> {
-                        hook(method).intercept(QueryHooker(service))
+                        hook(method).intercept(QueryHooker(mgr))
                         L.d("Hooked queryInternal")
                     }
                     "insertFile" -> {
-                        hook(method).intercept(InsertHooker(service))
+                        hook(method).intercept(InsertHooker(mgr))
                         L.d("Hooked insertFile")
                     }
                     "deleteInternal" -> {
-                        hook(method).intercept(DeleteHooker(service))
+                        hook(method).intercept(DeleteHooker(mgr))
                         L.d("Hooked deleteInternal")
                     }
                 }
             }
         } catch (t: Throwable) {
-            L.e("Error hooking MediaProvider", t)
+            L.e("Error hooking MediaProvider methods", t)
         }
     }
 
     @Throws(Throwable::class)
-    private fun onDownloadManagerLoaded(classLoader: ClassLoader) {
-        // Hook File.mkdir and mkdirs for download manager.
-        // FileHooker accepts ManagerService? (nullable) and handles null gracefully.
-        if (!::service.isInitialized) {
-            L.d("Download manager loaded before MediaProvider, hooking File operations without service")
-        }
-        val fileHooker = if (::service.isInitialized) FileHooker(service) else FileHooker(null)
+    private fun onDownloadManagerPackageReady(classLoader: ClassLoader) {
+        L.d("DownloadManager package ready, hooking File.mkdir/mkdirs")
         val fileClass = File::class.java
         try {
             val mkdir = fileClass.getDeclaredMethod("mkdir")
-            hook(mkdir).intercept(fileHooker)
+            hook(mkdir).intercept(FileHooker(service?.let {
+                // Create a service instance if needed (without context initialization)
+                // FileHooker handles null service gracefully
+                null
+            }))
             L.d("Hooked File.mkdir")
 
             val mkdirs = fileClass.getDeclaredMethod("mkdirs")
-            hook(mkdirs).intercept(fileHooker)
+            hook(mkdirs).intercept(FileHooker(service?.let { null }))
             L.d("Hooked File.mkdirs")
         } catch (t: Throwable) {
             L.e("Error hooking File operations", t)

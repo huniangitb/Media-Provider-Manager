@@ -1,2 +1,4 @@
 com.android.providers.media.module
-com.google.providers.media.module
+com.android.providers.media
+com.google.android.providers.media.module
+com.android.providers.downloads
