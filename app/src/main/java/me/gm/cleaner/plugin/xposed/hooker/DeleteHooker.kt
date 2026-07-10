@@ -23,6 +23,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.CancellationSignal
 import android.provider.MediaStore.Files.FileColumns
 import io.github.libxposed.api.XposedInterface
 import me.gm.cleaner.plugin.R
@@ -128,25 +129,34 @@ class DeleteHooker(private val service: ManagerService) : XposedInterface.Hooker
                     FileColumns.MIME_TYPE,
                 )
 
-                val c = when {
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
-                        val qbQuery = qb.javaClass.getDeclaredMethod("query", Any::class.java, Array<Any?>::class.java, String::class.java, Array<String>::class.java, String::class.java, String::class.java, String::class.java, String::class.java, Any::class.java)
-                        qbQuery.isAccessible = true
-                        qbQuery.invoke(qb, helper, projection, userWhere, userWhereArgs,
-                            null, null, null, null, null)
-                    }
+                val c = try {
+                    when {
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                            // On R+, QB.query uses Bundle-based signature: (DatabaseHelper, String[], Bundle, CancellationSignal)
+                            val deleteQueryArgs = Bundle().apply {
+                                userWhere?.let { putString(QUERY_ARG_SQL_SELECTION, it) }
+                                userWhereArgs?.let { putStringArray(QUERY_ARG_SQL_SELECTION_ARGS, it) }
+                            }
+                            val qbQuery = qb.javaClass.getDeclaredMethod("query", Any::class.java, Array<String>::class.java, Bundle::class.java, CancellationSignal::class.java)
+                            qbQuery.isAccessible = true
+                            qbQuery.invoke(qb, helper, projection, deleteQueryArgs, null)
+                        }
 
-                    Build.VERSION.SDK_INT == Build.VERSION_CODES.Q -> {
-                        val getWritableDb = helper.javaClass.getDeclaredMethod("getWritableDatabase")
-                        getWritableDb.isAccessible = true
-                        val db = getWritableDb.invoke(helper)
-                        val qbQuery = qb.javaClass.getDeclaredMethod("query", Any::class.java, Array<Any?>::class.java, String::class.java, Array<String>::class.java, String::class.java, String::class.java, String::class.java, String::class.java, Any::class.java)
-                        qbQuery.isAccessible = true
-                        qbQuery.invoke(qb, db, projection, userWhere, userWhereArgs, null, null, null, null, null)
-                    }
+                        Build.VERSION.SDK_INT == Build.VERSION_CODES.Q -> {
+                            val getWritableDb = helper.javaClass.getDeclaredMethod("getWritableDatabase")
+                            getWritableDb.isAccessible = true
+                            val db = getWritableDb.invoke(helper)
+                            val qbQuery = qb.javaClass.getDeclaredMethod("query", Any::class.java, Array<String>::class.java, String::class.java, Array<String>::class.java, String::class.java, String::class.java, String::class.java, String::class.java, CancellationSignal::class.java)
+                            qbQuery.isAccessible = true
+                            qbQuery.invoke(qb, db, projection, userWhere, userWhereArgs, null, null, null, null, null)
+                        }
 
-                    else -> throw UnsupportedOperationException()
-                } as Cursor
+                        else -> throw UnsupportedOperationException()
+                    } as Cursor
+                } catch (t: Throwable) {
+                    dlog("Error in qb.query (DeleteHooker): $t")
+                    return chain.proceed()
+                }
                 try {
                     if (c.count == 0) {
                         return chain.proceed()

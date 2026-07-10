@@ -36,10 +36,8 @@ import me.gm.cleaner.plugin.dao.MediaProviderRecord
 import me.gm.cleaner.plugin.xposed.ManagerService
 import me.gm.cleaner.plugin.xposed.util.FilteredCursor
 import me.gm.cleaner.plugin.xposed.util.RedirectCursorWrapper
-import java.lang.reflect.Method
 import java.util.function.Consumer
 import java.util.function.Function
-import java.util.Optional
 
 class QueryHooker(private val service: ManagerService) : XposedInterface.Hooker, MediaProviderHooker {
     @Throws(Throwable::class)
@@ -163,7 +161,7 @@ class QueryHooker(private val service: ManagerService) : XposedInterface.Hooker,
         val c = try {
             when {
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
-                    val qbQuery = qb.javaClass.getDeclaredMethod("query", Any::class.java, Array<Any?>::class.java, Bundle::class.java, CancellationSignal::class.java)
+                    val qbQuery = qb.javaClass.getDeclaredMethod("query", Any::class.java, Array<String>::class.java, Bundle::class.java, CancellationSignal::class.java)
                     qbQuery.isAccessible = true
                     qbQuery.invoke(qb, helper, dataProjection, query, signal)
                 }
@@ -191,7 +189,7 @@ class QueryHooker(private val service: ManagerService) : XposedInterface.Hooker,
                     getWritableDb?.isAccessible = true
                     val db = getWritableDb?.invoke(helper)
 
-                    val qbQuery = qb.javaClass.getDeclaredMethod("query", Any::class.java, Array<Any?>::class.java, String::class.java, Array<String>::class.java, String::class.java, String::class.java, String::class.java, String::class.java, CancellationSignal::class.java)
+                    val qbQuery = qb.javaClass.getDeclaredMethod("query", Any::class.java, Array<String>::class.java, String::class.java, Array<String>::class.java, String::class.java, String::class.java, String::class.java, String::class.java, CancellationSignal::class.java)
                     qbQuery.isAccessible = true
                     qbQuery.invoke(qb, db, dataProjection, selection, selectionArgs, groupBy, having, sortOrder, limit, signal)
                 }
@@ -233,15 +231,62 @@ class QueryHooker(private val service: ManagerService) : XposedInterface.Hooker,
 
             /** INTERCEPT */
             if (filterIndices.isEmpty()) {
-                return FilteredCursor.createUsingFilter(c, intArrayOf())
+                cursorHandled = true
+                // 重定向：若有 redirect_rules 匹配，包裹结果游标做路径重写
+                val hasRedirect = filteredTemplates.any { t -> !t.redirectRules.isNullOrEmpty() }
+                val result = if (hasRedirect) {
+                    RedirectCursorWrapper(FilteredCursor.createUsingFilter(c, intArrayOf()), service.ruleSp.templates)
+                } else {
+                    FilteredCursor.createUsingFilter(c, intArrayOf())
+                }
+                recordQueryUsage(chain, table, data, mimeType, shouldIntercept)
+                return result
             } else {
                 c.moveToFirst()
-                return FilteredCursor.createUsingFilter(c, filterIndices)
+                cursorHandled = true
+                val resultCursor = FilteredCursor.createUsingFilter(c, filterIndices)
+                // 重定向：若有 redirect_rules 匹配，包裹结果游标做路径重写
+                val hasRedirect = filteredTemplates.any { t -> !t.redirectRules.isNullOrEmpty() }
+                val result = if (hasRedirect) {
+                    RedirectCursorWrapper(resultCursor, service.ruleSp.templates)
+                } else {
+                    resultCursor
+                }
+                recordQueryUsage(chain, table, data, mimeType, shouldIntercept)
+                return result
             }
         } finally {
             if (!cursorHandled) {
                 c.close()
             }
+        }
+    }
+
+    @Throws(Throwable::class)
+    private fun recordQueryUsage(
+        chain: XposedInterface.Chain,
+        table: Int,
+        data: List<String>,
+        mimeType: List<String>,
+        shouldIntercept: List<Boolean>
+    ) {
+        /** RECORD - use async insert */
+        if (service.rootSp.getBoolean(
+                service.resources.getString(R.string.usage_record_key), true
+            )
+        ) {
+            service.insertRecordAsync(
+                MediaProviderRecord(
+                    0,
+                    System.currentTimeMillis(),
+                    chain.callingPackage,
+                    table,
+                    OP_QUERY,
+                    if (data.size < MAX_SIZE) data else data.subList(0, MAX_SIZE),
+                    mimeType,
+                    shouldIntercept
+                )
+            )
         }
     }
 

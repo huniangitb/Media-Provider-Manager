@@ -17,15 +17,9 @@
 package me.gm.cleaner.plugin.xposed
 
 import android.app.Application
-import android.content.ContentProvider
-import android.content.Context
-import android.content.pm.ApplicationInfo
-import android.content.pm.ProviderInfo
-import android.content.res.AssetManager
-import android.content.res.Resources
-import android.provider.MediaStore
-import de.robv.android.xposed.*
-import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
+import android.content.pm.PackageManager
+import io.github.libxposed.api.XposedModule
+import io.github.libxposed.api.XposedModuleInterface
 import me.gm.cleaner.plugin.BuildConfig
 import me.gm.cleaner.plugin.util.L
 import me.gm.cleaner.plugin.util.ModuleActivationStore
@@ -35,129 +29,153 @@ import me.gm.cleaner.plugin.xposed.hooker.InsertHooker
 import me.gm.cleaner.plugin.xposed.hooker.QueryHooker
 import java.io.File
 
-class XposedInit : ManagerService(), IXposedHookLoadPackage, IXposedHookZygoteInit {
+class XposedInit : XposedModule() {
+
+    private lateinit var service: ManagerService
 
     @Throws(Throwable::class)
-    private fun onModuleAppLoaded(lpparam: LoadPackageParam) {
-        XposedHelpers.findAndHookMethod(
-            Application::class.java,
-            "onCreate",
-            object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    val application = param.thisObject as? Application ?: return
-                    if (application.packageName != BuildConfig.APPLICATION_ID) {
-                        return
-                    }
-                    ModuleActivationStore.markAppProcessHooked(application)
-                    L.d("Marked module app process as hooked")
-                }
-            }
-        )
+    override fun onModuleLoaded(param: XposedModuleInterface.ModuleLoadedParam) {
+        super.onModuleLoaded(param)
+        L.d("Module loaded: process=${param.processName}, isSystemServer=${param.isSystemServer}")
+        // ManagerService will be created when we have a context (in onPackageReady)
     }
 
     @Throws(Throwable::class)
-    private fun onMediaProviderLoaded(lpparam: LoadPackageParam, context: Context) {
-        L.d("MediaProvider loaded: ${lpparam.packageName}")
+    override fun onPackageReady(param: XposedModuleInterface.PackageReadyParam) {
+        super.onPackageReady(param)
+        val packageName = param.getPackageName()
+        val classLoader = param.getClassLoader()
+        L.d("Package ready: $packageName")
+
+        when (packageName) {
+            BuildConfig.APPLICATION_ID -> {
+                // Called when our own module app process is loaded
+                // Mark the framework as active for the UI
+                try {
+                    markModuleAppLoaded(param)
+                } catch (t: Throwable) {
+                    L.e("Failed to mark module app as hooked", t)
+                }
+            }
+
+            "com.android.providers.media.module",
+            "com.android.providers.media",
+            "com.google.android.providers.media.module" -> {
+                onMediaProviderLoaded(classLoader, param)
+            }
+
+            "com.android.providers.downloads" -> {
+                onDownloadManagerLoaded(classLoader)
+            }
+        }
+    }
+
+    @Throws(Throwable::class)
+    private fun markModuleAppLoaded(param: XposedModuleInterface.PackageReadyParam) {
+        L.d("Module app package ready: ${param.getPackageName()}")
+        val classLoader = param.getClassLoader()
+        val activityThread = Class.forName("android.app.ActivityThread", false, classLoader)
+        val currentActivityThread = activityThread.getDeclaredMethod("currentActivityThread")
+        currentActivityThread.isAccessible = true
+        val at = currentActivityThread.invoke(null)
+        val getApplication = activityThread.getDeclaredMethod("getApplication")
+        getApplication.isAccessible = true
+        val app = getApplication.invoke(at) as Application
+        ModuleActivationStore.markAppProcessHooked(app)
+        L.d("Marked module app process as hooked")
+    }
+
+    @Throws(Throwable::class)
+    private fun onMediaProviderLoaded(
+        classLoader: ClassLoader,
+        param: XposedModuleInterface.PackageReadyParam
+    ) {
+        L.d("MediaProvider loaded: ${param.getPackageName()}")
         val mediaProvider = try {
-            XposedHelpers.findClass(
-                "com.android.providers.media.MediaProvider", lpparam.classLoader
-            )
-        } catch (e: XposedHelpers.ClassNotFoundError) {
+            Class.forName("com.android.providers.media.MediaProvider", false, classLoader)
+        } catch (e: ClassNotFoundException) {
             L.e("MediaProvider class not found!", e)
             return
         }
-        // only save MediaProvider's classLoader
-        classLoader = lpparam.classLoader
-        onCreate(context)
+
+        // Initialize ManagerService with the package context
+        // Note: In libxposed, the module runs in the target process,
+        // so we can access the target app's resources directly
+        if (!::service.isInitialized) {
+            service = ManagerService()
+            service.classLoader = classLoader
+        }
+
+        // Get the application context if available
         try {
-            if (L.isDebug) {
-                L.dumpHeader("START METHOD DUMP")
-                
-                L.d("--- MediaProvider Methods ---")
-                mediaProvider.declaredMethods.forEach { method ->
-                    if (method.name in setOf("getQueryBuilder", "getDatabaseForUri", "resolveVolumeName", "queryInternal")) {
-                        val params = method.parameterTypes.joinToString(", ") { it.name }
-                        L.v("METHOD_DUMP: ${method.name}($params) -> ${method.returnType.name}")
-                    }
-                }
-                
-                try {
-                    val databaseUtilsClass = XposedHelpers.findClass(
-                        "com.android.providers.media.util.DatabaseUtils", lpparam.classLoader
-                    )
-                    L.d("--- DatabaseUtils Methods ---")
-                    databaseUtilsClass.declaredMethods.forEach { method ->
-                        if (method.name in setOf("resolveQueryArgs", "recoverAbusiveSortOrder", "recoverAbusiveLimit", "recoverAbusiveSelection")) {
-                            val params = method.parameterTypes.joinToString(", ") { it.name }
-                            L.v("METHOD_DUMP: ${method.name}($params) -> ${method.returnType.name}")
-                        }
-                    }
-                } catch (e: Throwable) {
-                    L.e("Could not find DatabaseUtils", e)
-                }
-
-                L.dumpFooter()
+            val activityThread = Class.forName("android.app.ActivityThread", false, classLoader)
+            val currentActivityThread = activityThread.getDeclaredMethod("currentActivityThread")
+            currentActivityThread.isAccessible = true
+            val at = currentActivityThread.invoke(null)
+            val getApplication = activityThread.getDeclaredMethod("getApplication")
+            getApplication.isAccessible = true
+            val app = getApplication.invoke(at) as? Application
+            if (app == null) {
+                L.e("Could not get Application context (null), hooks may not work properly")
+                return
             }
+            service.onCreate(app)
+            // Use module's own Resources (not target app's) so module R.string IDs resolve correctly
+            service.resources = try {
+                val moduleAppInfo = getModuleApplicationInfo()
+                app.packageManager.getResourcesForApplication(moduleAppInfo)
+            } catch (t: Throwable) {
+                L.e("Could not get module Resources, trying module package name", t)
+                app.packageManager.getResourcesForApplication(BuildConfig.APPLICATION_ID)
+            }
+            L.d("ManagerService initialized with Application context")
+        } catch (t: Throwable) {
+            L.e("Could not get Application context, hooks may not work properly", t)
+            return
+        }
 
-            XposedBridge.hookAllMethods(
-                mediaProvider, "queryInternal", QueryHooker(this@XposedInit)
-            )
-            L.d("Hooked queryInternal")
-            XposedBridge.hookAllMethods(
-                mediaProvider, "insertFile", InsertHooker(this@XposedInit)
-            )
-            L.d("Hooked insertFile")
-            XposedBridge.hookAllMethods(
-                mediaProvider, "deleteInternal", DeleteHooker(this@XposedInit)
-            )
-            L.d("Hooked deleteInternal")
+        try {
+            // Hook queryInternal - match all overloads
+            for (method in mediaProvider.declaredMethods) {
+                when (method.name) {
+                    "queryInternal" -> {
+                        hook(method).intercept(QueryHooker(service))
+                        L.d("Hooked queryInternal")
+                    }
+                    "insertFile" -> {
+                        hook(method).intercept(InsertHooker(service))
+                        L.d("Hooked insertFile")
+                    }
+                    "deleteInternal" -> {
+                        hook(method).intercept(DeleteHooker(service))
+                        L.d("Hooked deleteInternal")
+                    }
+                }
+            }
         } catch (t: Throwable) {
             L.e("Error hooking MediaProvider", t)
         }
     }
 
     @Throws(Throwable::class)
-    private fun onDownloadManagerLoaded(lpparam: LoadPackageParam, context: Context) {
-        XposedHelpers.findAndHookMethod(File::class.java, "mkdir", FileHooker(this@XposedInit))
-        XposedHelpers.findAndHookMethod(File::class.java, "mkdirs", FileHooker(this@XposedInit))
-    }
-
-    @Throws(Throwable::class)
-    override fun handleLoadPackage(lpparam: LoadPackageParam) {
-        if (lpparam.packageName == BuildConfig.APPLICATION_ID) {
-            onModuleAppLoaded(lpparam)
-            return
+    private fun onDownloadManagerLoaded(classLoader: ClassLoader) {
+        // Hook File.mkdir and mkdirs for download manager.
+        // FileHooker accepts ManagerService? (nullable) and handles null gracefully.
+        if (!::service.isInitialized) {
+            L.d("Download manager loaded before MediaProvider, hooking File operations without service")
         }
-        if (lpparam.appInfo.flags and ApplicationInfo.FLAG_SYSTEM == 0) {
-            return
+        val fileHooker = if (::service.isInitialized) FileHooker(service) else FileHooker(null)
+        val fileClass = File::class.java
+        try {
+            val mkdir = fileClass.getDeclaredMethod("mkdir")
+            hook(mkdir).intercept(fileHooker)
+            L.d("Hooked File.mkdir")
+
+            val mkdirs = fileClass.getDeclaredMethod("mkdirs")
+            hook(mkdirs).intercept(fileHooker)
+            L.d("Hooked File.mkdirs")
+        } catch (t: Throwable) {
+            L.e("Error hooking File operations", t)
         }
-        XposedHelpers.findAndHookMethod(
-            ContentProvider::class.java, "attachInfo",
-            Context::class.java, ProviderInfo::class.java, Boolean::class.java,
-            object : XC_MethodHook() {
-                @Throws(Throwable::class)
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    val context = param.args[0] as Context
-                    val providerInfo = param.args[1] as ProviderInfo
-
-                    when (providerInfo.authority) {
-                        MediaStore.AUTHORITY -> onMediaProviderLoaded(lpparam, context)
-                        Downloads_Impl_AUTHORITY -> onDownloadManagerLoaded(lpparam, context)
-                    }
-                }
-            }
-        )
-    }
-
-    @Throws(Throwable::class)
-    @Suppress("DEPRECATION")
-    override fun initZygote(startupParam: IXposedHookZygoteInit.StartupParam) {
-        val assetManager = AssetManager::class.java.newInstance()
-        XposedHelpers.callMethod(assetManager, "addAssetPath", startupParam.modulePath)
-        resources = Resources(assetManager, null, null)
-    }
-
-    companion object {
-        const val Downloads_Impl_AUTHORITY = "downloads"
     }
 }

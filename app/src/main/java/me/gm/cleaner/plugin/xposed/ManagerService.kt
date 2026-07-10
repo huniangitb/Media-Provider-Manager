@@ -70,7 +70,7 @@ class ManagerService : IManagerService.Stub() {
         }
     }
 
-    protected fun onCreate(context: Context) {
+    fun onCreate(context: Context) {
         this.context = context
         appUid = context.packageManager.getPackageUid(BuildConfig.APPLICATION_ID, 0)
         database = Room
@@ -101,7 +101,7 @@ class ManagerService : IManagerService.Stub() {
      * Clean up resources when service is being destroyed.
      * Should be called from Xposed hook when MediaProvider is shutting down.
      */
-    protected fun onDestroy() {
+    fun onDestroy() {
         // Flush remaining records before shutdown
         flushRecordQueueSync()
 
@@ -313,12 +313,18 @@ class ManagerService : IManagerService.Stub() {
 
     override fun getInstalledPackages(userId: Int, flags: Int): ParceledListSlice<PackageInfo> {
         enforceCallerPermission()
-        val getInstalledMethod = packageManagerService.javaClass
-            .getDeclaredMethod("getInstalledPackages", Long::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-            .also { it.isAccessible = true }
+        val getInstalledMethod = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManagerService.javaClass
+                .getDeclaredMethod("getInstalledPackages", Long::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        } else {
+            packageManagerService.javaClass
+                .getDeclaredMethod("getInstalledPackages", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        }
+        getInstalledMethod.isAccessible = true
+        val flagsArg: Any = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) flags.toLong() else flags
         val parceledListSlice = getInstalledMethod.invoke(
             packageManagerService,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) flags.toLong() else flags,
+            flagsArg,
             userId
         )
         val getListMethod = parceledListSlice.javaClass
@@ -332,13 +338,19 @@ class ManagerService : IManagerService.Stub() {
 
     override fun getPackageInfo(packageName: String, flags: Int, userId: Int): PackageInfo? {
         enforceCallerPermission()
-        val getPkgInfoMethod = packageManagerService.javaClass
-            .getDeclaredMethod("getPackageInfo", String::class.java, Long::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-            .also { it.isAccessible = true }
+        val getPkgInfoMethod = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManagerService.javaClass
+                .getDeclaredMethod("getPackageInfo", String::class.java, Long::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        } else {
+            packageManagerService.javaClass
+                .getDeclaredMethod("getPackageInfo", String::class.java, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        }
+        getPkgInfoMethod.isAccessible = true
+        val flagsArg: Any = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) flags.toLong() else flags
         return getPkgInfoMethod.invoke(
             packageManagerService,
             packageName,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) flags.toLong() else flags,
+            flagsArg,
             userId
         ) as? PackageInfo
     }

@@ -289,9 +289,9 @@ class InsertHooker(private val service: ManagerService) : XposedInterface.Hooker
             getVolumePath.isAccessible = true
             var res = getVolumePath.invoke(thisObject, resolvedVolumeName) as File
 
-            val buildPath = Environment::class.java.getDeclaredMethod("buildPath", File::class.java, Any::class.java)
+            val buildPath = Environment::class.java.getDeclaredMethod("buildPath", File::class.java, Array<String>::class.java)
             buildPath.isAccessible = true
-            res = buildPath.invoke(null, res, relativePath) as File
+            res = buildPath.invoke(null, res, arrayOf(relativePath as? String ?: "")) as File
 
             val buildUniqueFile = FileUtils::class.java.getDeclaredMethod("buildUniqueFile", File::class.java, String::class.java, String::class.java)
             buildUniqueFile.isAccessible = true
