@@ -16,7 +16,7 @@
 
 package me.gm.cleaner.plugin.util
 
-import de.robv.android.xposed.XposedBridge
+import android.util.Log
 import me.gm.cleaner.plugin.BuildConfig
 import java.util.concurrent.ConcurrentHashMap
 
@@ -77,7 +77,7 @@ object L {
     @JvmStatic
     fun d(message: String) {
         if (isLoggable(DEBUG)) {
-            XposedBridge.log("$TAG: $message")
+            Log.d(TAG, message)
         }
     }
     
@@ -87,7 +87,7 @@ object L {
     @JvmStatic
     fun d(tag: String, message: String) {
         if (isLoggable(DEBUG)) {
-            XposedBridge.log("$TAG/$tag: $message")
+            Log.d(TAG, "$tag: $message")
         }
     }
     
@@ -97,7 +97,7 @@ object L {
     @JvmStatic
     fun i(message: String) {
         if (isLoggable(INFO)) {
-            XposedBridge.log("$TAG: $message")
+            Log.i(TAG, message)
         }
     }
     
@@ -107,7 +107,7 @@ object L {
     @JvmStatic
     fun i(tag: String, message: String) {
         if (isLoggable(INFO)) {
-            XposedBridge.log("$TAG/$tag: $message")
+            Log.i(TAG, "$tag: $message")
         }
     }
     
@@ -117,7 +117,7 @@ object L {
     @JvmStatic
     fun w(message: String) {
         if (isLoggable(WARNING)) {
-            XposedBridge.log("$TAG: $message")
+            Log.w(TAG, message)
         }
     }
     
@@ -127,7 +127,7 @@ object L {
     @JvmStatic
     fun w(tag: String, message: String) {
         if (isLoggable(WARNING)) {
-            XposedBridge.log("$TAG/$tag: $message")
+            Log.w(TAG, "$tag: $message")
         }
     }
     
@@ -137,7 +137,7 @@ object L {
     @JvmStatic
     fun e(message: String) {
         if (isLoggable(ERROR)) {
-            XposedBridge.log("$TAG: $message")
+            Log.e(TAG, message)
         }
     }
     
@@ -147,7 +147,7 @@ object L {
     @JvmStatic
     fun e(tag: String, message: String) {
         if (isLoggable(ERROR)) {
-            XposedBridge.log("$TAG/$tag: $message")
+            Log.e(TAG, "$tag: $message")
         }
     }
     
@@ -157,8 +157,7 @@ object L {
     @JvmStatic
     fun e(message: String, throwable: Throwable) {
         if (isLoggable(ERROR)) {
-            XposedBridge.log("$TAG: $message")
-            XposedBridge.log(throwable)
+            Log.e(TAG, message, throwable)
         }
     }
     
@@ -168,8 +167,7 @@ object L {
     @JvmStatic
     fun e(tag: String, message: String, throwable: Throwable) {
         if (isLoggable(ERROR)) {
-            XposedBridge.log("$TAG/$tag: $message")
-            XposedBridge.log(throwable)
+            Log.e(TAG, "$tag: $message", throwable)
         }
     }
     
@@ -180,7 +178,7 @@ object L {
     @JvmStatic
     fun v(message: String) {
         if (isLoggable(VERBOSE)) {
-            XposedBridge.log("$TAG: $message")
+            Log.v(TAG, message)
         }
     }
     
@@ -190,7 +188,7 @@ object L {
     @JvmStatic
     fun v(tag: String, message: String) {
         if (isLoggable(VERBOSE)) {
-            XposedBridge.log("$TAG/$tag: $message")
+            Log.v(TAG, "$tag: $message")
         }
     }
     
@@ -232,7 +230,7 @@ object L {
             message
         }
         
-        XposedBridge.log("$TAG: $finalMessage")
+        Log.d(TAG, finalMessage)
     }
     
     /**
@@ -265,7 +263,7 @@ object L {
             message
         }
         
-        XposedBridge.log("$TAG/$tag: $finalMessage")
+        Log.d(TAG, "$tag: $finalMessage")
     }
     
     /**
@@ -287,7 +285,7 @@ object L {
             val argsStr = if (args.isEmpty()) "" else args.joinToString(", ") { 
                 it?.let { "${it.javaClass.simpleName}=$it" } ?: "null"
             }
-            XposedBridge.log("$TAG: → $method($argsStr)")
+            Log.v(TAG, "→ $method($argsStr)")
         }
     }
     
@@ -298,7 +296,7 @@ object L {
     fun exit(method: String, result: Any? = null) {
         if (isLoggable(VERBOSE)) {
             val resultStr = result?.let { "${it.javaClass.simpleName}=$it" } ?: "void"
-            XposedBridge.log("$TAG: ← $method = $resultStr")
+            Log.v(TAG, "← $method = $resultStr")
         }
     }
     
@@ -308,7 +306,7 @@ object L {
     @JvmStatic
     fun dumpHeader(title: String) {
         if (isLoggable(DEBUG)) {
-            XposedBridge.log("$TAG: ${"*".repeat(10)} $title ${"*".repeat(10)}")
+            Log.d(TAG, "${"*".repeat(10)} $title ${"*".repeat(10)}")
         }
     }
     
@@ -318,7 +316,7 @@ object L {
     @JvmStatic
     fun dumpFooter() {
         if (isLoggable(DEBUG)) {
-            XposedBridge.log("$TAG: ${"*".repeat(30)}")
+            Log.d(TAG, "${"*".repeat(30)}")
         }
     }
 }

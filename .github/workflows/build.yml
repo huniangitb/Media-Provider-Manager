@@ -2,9 +2,9 @@ name: Android CI Build
 
 on:
   push:
-    branches: [ main, Re, develop, test ]
+    branches: [ main, Re, develop, test, migrate-libxposed-api ]
   pull_request:
-    branches: [ main, Re, develop, test ]
+    branches: [ main, Re, develop, test, migrate-libxposed-api ]
   workflow_dispatch:
 
 jobs:

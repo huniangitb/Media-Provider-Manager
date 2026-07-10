@@ -21,7 +21,6 @@ import android.content.pm.PackageInfo
 import android.content.res.Resources
 import android.os.*
 import androidx.room.Room
-import de.robv.android.xposed.XposedHelpers
 import me.gm.cleaner.plugin.BuildConfig
 import me.gm.cleaner.plugin.IManagerService
 import me.gm.cleaner.plugin.IMediaChangeObserver
@@ -39,11 +38,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONArray
 import org.json.JSONObject
 
-abstract class ManagerService : IManagerService.Stub() {
+class ManagerService : IManagerService.Stub() {
     lateinit var classLoader: ClassLoader
-        protected set
     lateinit var resources: Resources
-        protected set
     lateinit var context: Context
         private set
     private lateinit var database: MediaProviderRecordDatabase
@@ -73,7 +70,7 @@ abstract class ManagerService : IManagerService.Stub() {
         }
     }
 
-    protected fun onCreate(context: Context) {
+    fun onCreate(context: Context) {
         this.context = context
         appUid = context.packageManager.getPackageUid(BuildConfig.APPLICATION_ID, 0)
         database = Room
@@ -104,7 +101,7 @@ abstract class ManagerService : IManagerService.Stub() {
      * Clean up resources when service is being destroyed.
      * Should be called from Xposed hook when MediaProvider is shutting down.
      */
-    protected fun onDestroy() {
+    fun onDestroy() {
         // Flush remaining records before shutdown
         flushRecordQueueSync()
 
@@ -302,28 +299,38 @@ abstract class ManagerService : IManagerService.Stub() {
     }
 
     private val packageManagerService: IInterface by lazy {
-        val binder = XposedHelpers.callStaticMethod(
-            XposedHelpers.findClass("android.os.ServiceManager", classLoader),
-            "getService", "package"
-        ) as IBinder
-        XposedHelpers.callStaticMethod(
-            XposedHelpers.findClass(
-                "android.content.pm.IPackageManager\$Stub", classLoader
-            ), "asInterface", binder
-        ) as IInterface
+        val smClass = Class.forName("android.os.ServiceManager", false, classLoader)
+        val getService = smClass.getDeclaredMethod("getService", String::class.java)
+        getService.isAccessible = true
+        val binder = getService.invoke(null, "package") as IBinder
+        val pmsClass = Class.forName("android.content.pm.IPackageManager\$Stub", false, classLoader)
+        val asInterface = pmsClass.getDeclaredMethod("asInterface", IBinder::class.java)
+        asInterface.isAccessible = true
+        asInterface.invoke(null, binder) as IInterface
     }
 
     override fun getModuleVersion() = BuildConfig.VERSION_CODE
 
     override fun getInstalledPackages(userId: Int, flags: Int): ParceledListSlice<PackageInfo> {
         enforceCallerPermission()
-        val parceledListSlice = XposedHelpers.callMethod(
+        val getInstalledMethod = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManagerService.javaClass
+                .getDeclaredMethod("getInstalledPackages", Long::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        } else {
+            packageManagerService.javaClass
+                .getDeclaredMethod("getInstalledPackages", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        }
+        getInstalledMethod.isAccessible = true
+        val flagsArg: Any = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) flags.toLong() else flags
+        val parceledListSlice = getInstalledMethod.invoke(
             packageManagerService,
-            "getInstalledPackages",
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) flags.toLong() else flags,
+            flagsArg,
             userId
         )
-        val list = (XposedHelpers.callMethod(parceledListSlice, "getList") as? List<*>)
+        val getListMethod = parceledListSlice.javaClass
+            .getDeclaredMethod("getList")
+            .also { it.isAccessible = true }
+        val list = (getListMethod.invoke(parceledListSlice) as? List<*>)
             ?.filterIsInstance<PackageInfo>()
             .orEmpty()
         return ParceledListSlice(list)
@@ -331,11 +338,19 @@ abstract class ManagerService : IManagerService.Stub() {
 
     override fun getPackageInfo(packageName: String, flags: Int, userId: Int): PackageInfo? {
         enforceCallerPermission()
-        return XposedHelpers.callMethod(
+        val getPkgInfoMethod = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManagerService.javaClass
+                .getDeclaredMethod("getPackageInfo", String::class.java, Long::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        } else {
+            packageManagerService.javaClass
+                .getDeclaredMethod("getPackageInfo", String::class.java, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        }
+        getPkgInfoMethod.isAccessible = true
+        val flagsArg: Any = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) flags.toLong() else flags
+        return getPkgInfoMethod.invoke(
             packageManagerService,
-            "getPackageInfo",
             packageName,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) flags.toLong() else flags,
+            flagsArg,
             userId
         ) as? PackageInfo
     }
