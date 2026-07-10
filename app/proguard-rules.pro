@@ -13,6 +13,13 @@
     *;
 }
 
+# libxposed API —— 保留模块入口类
+-dontwarn io.github.libxposed.annotation.**
+-adaptresourcefilecontents META-INF/xposed/java_init.list
+-keep,allowoptimization,allowobfuscation public class * extends io.github.libxposed.api.XposedModule {
+    public <init>();
+}
+
 # JNI 回调接口 —— 保留类与方法名，确保 nsp_bridge.c 中 FindClass 能定位
 -keep class me.gm.cleaner.plugin.xposed.OnConfigUpdateListener {
     *;
