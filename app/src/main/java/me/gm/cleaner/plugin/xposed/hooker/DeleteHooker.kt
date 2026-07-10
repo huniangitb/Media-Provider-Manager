@@ -157,7 +157,7 @@ class DeleteHooker(private val service: ManagerService) : XC_MethodHook(), Media
         // 只读路径检查：阻止删除 readOnlyPaths 中的文件
         try {
             val hasReadOnly = data.any { d ->
-                service.ruleSp.templates.isReadOnlyPath(d)
+                service.ruleSp.templates.isReadOnlyPath(d, param.callingPackage)
             }
             if (hasReadOnly) {
                 param.result = 0
