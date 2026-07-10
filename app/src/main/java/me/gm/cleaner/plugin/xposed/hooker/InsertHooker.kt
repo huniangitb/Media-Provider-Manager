@@ -247,11 +247,11 @@ class InsertHooker(private val service: ManagerService) : XposedInterface.Hooker
                 isFuseThread.isAccessible = true
                 val isFuse = isFuseThread.invoke(thisObject) as Boolean
 
-                val sanitizeValues = fileUtilsClass.getDeclaredMethod("sanitizeValues", ContentValues::class.java, Boolean::class.java)
+                val sanitizeValues = fileUtilsClass.getDeclaredMethod("sanitizeValues", ContentValues::class.java, Boolean::class.javaPrimitiveType)
                 sanitizeValues.isAccessible = true
                 sanitizeValues.invoke(null, values, !isFuse)
 
-                val computeDataFromValues = fileUtilsClass.getDeclaredMethod("computeDataFromValues", ContentValues::class.java, File::class.java, Boolean::class.java)
+                val computeDataFromValues = fileUtilsClass.getDeclaredMethod("computeDataFromValues", ContentValues::class.java, File::class.java, Boolean::class.javaPrimitiveType)
                 computeDataFromValues.isAccessible = true
                 computeDataFromValues.invoke(null, values, volumePath, isFuse)
 

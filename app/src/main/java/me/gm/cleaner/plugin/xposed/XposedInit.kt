@@ -180,15 +180,11 @@ class XposedInit : XposedModule() {
         val fileClass = File::class.java
         try {
             val mkdir = fileClass.getDeclaredMethod("mkdir")
-            hook(mkdir).intercept(FileHooker(service?.let {
-                // Create a service instance if needed (without context initialization)
-                // FileHooker handles null service gracefully
-                null
-            }))
+            hook(mkdir).intercept(FileHooker(null))
             L.d("Hooked File.mkdir")
 
             val mkdirs = fileClass.getDeclaredMethod("mkdirs")
-            hook(mkdirs).intercept(FileHooker(service?.let { null }))
+            hook(mkdirs).intercept(FileHooker(null))
             L.d("Hooked File.mkdirs")
         } catch (t: Throwable) {
             L.e("Error hooking File operations", t)
