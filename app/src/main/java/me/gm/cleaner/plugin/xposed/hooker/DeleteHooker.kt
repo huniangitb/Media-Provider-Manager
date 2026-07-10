@@ -90,14 +90,14 @@ class DeleteHooker(private val service: ManagerService) : XposedInterface.Hooker
                     when {
                         Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
                             val enforceCallingPermission = thisObj.javaClass
-                                .getDeclaredMethod("enforceCallingPermission", Uri::class.java, Bundle::class.java, Boolean::class.java)
+                                .getDeclaredMethod("enforceCallingPermission", Uri::class.java, Bundle::class.java, Boolean::class.javaPrimitiveType)
                             enforceCallingPermission.isAccessible = true
                             enforceCallingPermission.invoke(thisObj, uri, extras, true)
                         }
 
                         Build.VERSION.SDK_INT == Build.VERSION_CODES.Q -> {
                             val enforceCallingPermission = thisObj.javaClass
-                                .getDeclaredMethod("enforceCallingPermission", Uri::class.java, Boolean::class.java)
+                                .getDeclaredMethod("enforceCallingPermission", Uri::class.java, Boolean::class.javaPrimitiveType)
                             enforceCallingPermission.isAccessible = true
                             enforceCallingPermission.invoke(thisObj, uri, true)
                         }

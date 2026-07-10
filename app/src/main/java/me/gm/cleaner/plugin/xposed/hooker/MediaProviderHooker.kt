@@ -191,7 +191,7 @@ interface MediaProviderHooker {
     fun XposedInterface.Chain.matchUri(uri: Uri, allowHidden: Boolean): Int {
         ensureMediaProvider()
         val thisObj = thisObject ?: return -1
-        val method = thisObj.javaClass.getDeclaredMethod("matchUri", Uri::class.java, Boolean::class.java)
+        val method = thisObj.javaClass.getDeclaredMethod("matchUri", Uri::class.java, Boolean::class.javaPrimitiveType)
         method.isAccessible = true
         return method.invoke(thisObj, uri, allowHidden) as Int
     }

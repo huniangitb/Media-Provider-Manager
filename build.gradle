@@ -1,8 +1,4 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
-ext {
-    hiltVersion = '2.59.2'
-    navigationVersion = '2.9.7'
-}
 
 task clean(type: Delete) {
     delete rootProject.layout.buildDirectory
