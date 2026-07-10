@@ -1,5 +1,0 @@
-# LSPosed module configuration
-entry = me.gm.cleaner.plugin.xposed.XposedInit
-api = 102
-description = An Xposed module intended to prevent media storage abuse.
-author = Green Mushroom
