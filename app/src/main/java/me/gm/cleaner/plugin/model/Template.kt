@@ -227,8 +227,9 @@ class Templates(json: String?, private val remoteValues: List<Template> = emptyL
      * 检查 [path] 是否在任一模板的 readOnlyPaths 中。
      * 仅检查 readOnlyPaths 非空的模板。
      */
-    fun isReadOnlyPath(path: String): Boolean {
+    fun isReadOnlyPath(path: String, packageName: String = ""): Boolean {
         return mergedValues.any { t ->
+            if (shouldSkipForPackage(t, packageName)) return@any false
             t.readOnlyPaths?.any { FileUtils.contains(resolvePath(it), path) } == true
         }
     }
@@ -238,8 +239,9 @@ class Templates(json: String?, private val remoteValues: List<Template> = emptyL
      * 返回替换后的 target 路径；否则返回原路径。
      * source/target 均为相对路径，需解析为绝对路径后再匹配。
      */
-    fun resolveRedirect(path: String): String {
+    fun resolveRedirect(path: String, packageName: String = ""): String {
         for (t in mergedValues) {
+            if (shouldSkipForPackage(t, packageName)) continue
             val rules = t.redirectRules ?: continue
             for (rule in rules) {
                 val absSource = resolvePath(rule.source)
@@ -255,8 +257,9 @@ class Templates(json: String?, private val remoteValues: List<Template> = emptyL
      * 反转重定向：将 [path] 中匹配 target 前缀的部分替换为 source 前缀。
      * 用于查询结果中 _data 列的路径重写，让应用看到的是 source 路径。
      */
-    fun reverseRedirect(path: String): String {
+    fun reverseRedirect(path: String, packageName: String = ""): String {
         for (t in mergedValues) {
+            if (shouldSkipForPackage(t, packageName)) continue
             val rules = t.redirectRules ?: continue
             for (rule in rules) {
                 val absTarget = resolvePath(rule.target)
@@ -266,5 +269,17 @@ class Templates(json: String?, private val remoteValues: List<Template> = emptyL
             }
         }
         return path
+    }
+
+    /** 判断被动全局模板是否应对此包跳过 */
+    private fun shouldSkipForPackage(template: Template, packageName: String): Boolean {
+        val apps = template.applyToApp ?: return false
+        if ("*" !in apps || template.globalInject) return false
+        if (packageName.isEmpty()) return false  // 未知包名时不跳过（向后兼容）
+        // 被动全局：仅当包有显式模板时才匹配
+        return mergedValues.none { other ->
+            other.templateName != template.templateName &&
+            other.applyToApp?.contains(packageName) == true
+        }
     }
 }

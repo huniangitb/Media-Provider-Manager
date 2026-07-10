@@ -120,7 +120,7 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
         // 只读路径检查：若 data 在 readOnlyPaths 中则拒绝写入
         if (!data.isNullOrEmpty()) {
             try {
-                if (service.ruleSp.templates.isReadOnlyPath(data)) {
+                if (service.ruleSp.templates.isReadOnlyPath(data, param.callingPackage)) {
                     param.result = null
                     return
                 }
@@ -128,7 +128,7 @@ class InsertHooker(private val service: ManagerService) : XC_MethodHook(), Media
 
             // 重定向：若 data 匹配 redirect_rules.source，改写 values[DATA] 为 target
             try {
-                val redirectData = service.ruleSp.templates.resolveRedirect(data)
+                val redirectData = service.ruleSp.templates.resolveRedirect(data, param.callingPackage)
                 if (redirectData != data) {
                     values.put(MediaStore.MediaColumns.DATA, redirectData)
                 }
