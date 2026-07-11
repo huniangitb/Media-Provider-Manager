@@ -20,6 +20,8 @@ import me.gm.cleaner.plugin.model.Template
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -57,56 +59,65 @@ class ConfigSubscriptionManager(
 
         val myGen = ++subscribeGen
         job = CoroutineScope(Dispatchers.IO).launch {
-            RemoteConfigLogBuffer.log("=== Subscribe start ===")
-            subscribeStatus = "starting"
-            // 协程启动即标记已订阅，不等首次回调
-            isSubscribed = true
-            try {
-                NativeConfigBridge.nativeSubscribeConfig(object : OnConfigUpdateListener {
-                    override fun onConfigUpdate(json: String) {
-                        try {
-                            subscribeStatus = "active"
-                            RemoteConfigLogBuffer.log("Subscribe received: $json")
-                            val parsed = Template.GSON.fromJson(json, Array<Template>::class.java).toList()
-                            RemoteConfigLogBuffer.log("Subscribe parsed ${parsed.size} templates")
+            // 自动重连循环：nativeSubscribeConfig 返回后自动重新订阅，
+            // 直到被外部 stop() 取消（job.cancel → isActive=false）
+            while (myGen == subscribeGen && isActive) {
+                RemoteConfigLogBuffer.log("=== Subscribe start ===")
+                subscribeStatus = "starting"
+                // 协程启动即标记已订阅，不等首次回调
+                isSubscribed = true
+                try {
+                    NativeConfigBridge.nativeSubscribeConfig(object : OnConfigUpdateListener {
+                        override fun onConfigUpdate(json: String) {
+                            try {
+                                subscribeStatus = "active"
+                                RemoteConfigLogBuffer.log("Subscribe received: $json")
+                                val parsed = Template.GSON.fromJson(json, Array<Template>::class.java).toList()
+                                RemoteConfigLogBuffer.log("Subscribe parsed ${parsed.size} templates")
 
-                            remoteFile.parentFile?.mkdirs()
-                            remoteFile.writeText(json)
-                            RemoteConfigLogBuffer.log("Subscribe cache written: ${remoteFile.length()} bytes")
+                                remoteFile.parentFile?.mkdirs()
+                                remoteFile.writeText(json)
+                                RemoteConfigLogBuffer.log("Subscribe cache written: ${remoteFile.length()} bytes")
 
-                            cachedContent = json
-                            cachedTemplates = parsed
-                            lastPullTimestamp = System.currentTimeMillis()
-                            lastError = null
-                            isSubscribed = true
+                                cachedContent = json
+                                cachedTemplates = parsed
+                                lastPullTimestamp = System.currentTimeMillis()
+                                lastError = null
+                                isSubscribed = true
 
-                            RemoteConfigLogBuffer.log("=== Subscribe update processed ===")
-                            onConfigUpdated()
-                        } catch (e: Exception) {
-                            RemoteConfigLogBuffer.log("Subscribe parse error: ${e.message}")
-                            lastError = "Subscribe parse: ${e.message}"
+                                RemoteConfigLogBuffer.log("=== Subscribe update processed ===")
+                                onConfigUpdated()
+                            } catch (e: Exception) {
+                                RemoteConfigLogBuffer.log("Subscribe parse error: ${e.message}")
+                                lastError = "Subscribe parse: ${e.message}"
+                            }
                         }
-                    }
 
-                    override fun onError(message: String) {
-                        RemoteConfigLogBuffer.log("Subscribe error: $message")
-                        lastError = message
-                        // 连接性错误（超时重连等）不置 false，订阅仍然活跃
-                        if (!message.startsWith("injector disconnected")) {
-                            isSubscribed = false
+                        override fun onError(message: String) {
+                            RemoteConfigLogBuffer.log("Subscribe error: $message")
+                            lastError = message
+                            // 连接性错误（超时重连等）不置 false，订阅仍然活跃
+                            if (!message.startsWith("injector disconnected")) {
+                                isSubscribed = false
+                            }
                         }
-                    }
-                })
-            } catch (e: Exception) {
-                RemoteConfigLogBuffer.log("Subscribe threw: ${e.message}")
-                lastError = "Subscribe threw: ${e.message}"
+                    })
+                } catch (e: Exception) {
+                    RemoteConfigLogBuffer.log("Subscribe threw: ${e.message}")
+                    lastError = "Subscribe threw: ${e.message}"
+                }
+                // 仅当没有新订阅启动时才重置状态并延迟重试，避免空转
+                if (myGen == subscribeGen && isActive) {
+                    isSubscribed = false
+                    subscribeStatus = "failed"
+                    RemoteConfigLogBuffer.log("=== Subscribe ended, auto-reconnect in 3s ===")
+                    delay(3000)
+                }
             }
-            // 仅当没有新订阅启动时才重置状态，避免覆盖新订阅
-            if (myGen == subscribeGen) {
-                isSubscribed = false
-                subscribeStatus = "failed"
-            }
-            RemoteConfigLogBuffer.log("=== Subscribe ended ===")
+            // 退出循环（被 stop() 取消或被新 start() 取代）
+            isSubscribed = false
+            subscribeStatus = "failed"
+            RemoteConfigLogBuffer.log("=== Subscribe stopped ===")
         }
     }
 
