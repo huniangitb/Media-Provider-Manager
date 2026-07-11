@@ -212,9 +212,14 @@ class Templates(json: String?, private val remoteValues: List<Template> = emptyL
                     t.allowPaths?.any { FileUtils.contains(resolvePath(it), data) } == true
                 }) return@map false
             // 拒绝检查：任一模板拒绝则拦截
+            // 但若存在显式（非全局）模板明确设置 enable_sandbox=false，
+            // 则全局模板的沙盒不应对此包生效，由显式模板按自身规则决定
+            val globalSandboxOverridden = templates.any { t ->
+                !t.enableSandbox && (t.applyToApp?.contains("*") != true)
+            }
             templates.any { template ->
-                // 沙盒开启 → 拒绝所有媒体类型
-                if (template.enableSandbox) {
+                // 沙盒开启 → 拒绝所有媒体类型（全局模板的沙盒被显式模板覆盖时跳过）
+                if (template.enableSandbox && !(globalSandboxOverridden && template.applyToApp?.contains("*") == true)) {
                     return@any true
                 }
                 // 有限拒绝：permittedMediaTypes 设置且当前类型不在其中
