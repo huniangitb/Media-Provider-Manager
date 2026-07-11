@@ -46,9 +46,7 @@ import me.gm.cleaner.plugin.model.Template
 import me.gm.cleaner.plugin.ui.components.EmptyStateCard
 import me.gm.cleaner.plugin.ui.components.SecondaryTopBar
 import me.gm.cleaner.plugin.ui.components.SectionHeader
-import me.gm.cleaner.plugin.ui.screens.templating.templateFilterPathSummary
-import me.gm.cleaner.plugin.ui.screens.templating.templateMediaTypeSummary
-import me.gm.cleaner.plugin.ui.screens.templating.templateOperationSummary
+import me.gm.cleaner.plugin.ui.screens.templating.templateRuleCount
 import me.gm.cleaner.plugin.ui.screens.templating.templateScopeLabel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -154,9 +152,7 @@ private fun TemplateItem(
     onClick: () -> Unit,
 ) {
     val context = LocalContext.current
-    val operationSummary = templateOperationSummary(context, template)
-    val mediaTypeSummary = templateMediaTypeSummary(context, template)
-    val filterPathSummary = templateFilterPathSummary(context, template)
+    val ruleCount = templateRuleCount(template)
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -196,33 +192,11 @@ private fun TemplateItem(
                     }
                 }
                 Text(
-                    text = operationSummary,
+                    text = stringResource(R.string.template_rule_count, ruleCount),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                 )
-                mediaTypeSummary?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                filterPathSummary?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
             }
             if (template.source != "remote") {
                 IconButton(onClick = onDelete) {

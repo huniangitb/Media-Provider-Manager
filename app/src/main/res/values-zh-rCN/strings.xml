@@ -130,6 +130,7 @@
     <string name="add_to_template">添加到模板</string>
     <string name="applied_templates_count">已应用模板（%d）</string>
     <string name="template_count">%d 个模板</string>
+    <string name="template_rule_count">%d 条规则</string>
     <string name="empty_search_hint">请尝试其他关键字，或刷新列表。</string>
     <string name="delete_template_title">删除模板</string>
     <string name="delete_template_message">确定删除模板“%1$s”吗？</string>
