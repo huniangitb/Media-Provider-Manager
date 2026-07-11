@@ -158,6 +158,9 @@
     <string name="apps_selected_count">%d app(s) selected</string>
     <string name="template_save_validation">Please provide a name and select at least one operation</string>
     <string name="template_name_exists">Template name already exists</string>
+    <string name="save_template_failed">Failed to save. Module may be inactive.</string>
+    <string name="template_saved">Template saved</string>
+    <string name="template_save_button">Save</string>
     <string name="create_new_template">Create new template</string>
     <string name="add_to_template">Add to template</string>
     <string name="applied_templates_count">Applied Templates (%d)</string>
