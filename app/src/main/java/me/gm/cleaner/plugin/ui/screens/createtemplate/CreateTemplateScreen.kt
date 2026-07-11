@@ -60,6 +60,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import android.widget.Toast
 import me.gm.cleaner.plugin.R
 import me.gm.cleaner.plugin.model.SpIdentifiers.TEMPLATE_PREFERENCES
 import me.gm.cleaner.plugin.model.Template
@@ -154,15 +155,26 @@ fun CreateTemplateScreen(
         selectedAllowPaths = (selectedAllowPaths + path).distinct().sorted()
     }
 
-    // Auto-save function
-    fun saveTemplate() {
-        if (name.isBlank() || selectedOperations.isEmpty()) return
+    // Save function, returns true if saved successfully
+    fun saveTemplate(): Boolean {
+        if (name.isBlank() || selectedOperations.isEmpty()) {
+            Toast.makeText(context, R.string.template_save_validation, Toast.LENGTH_SHORT).show()
+            return false
+        }
 
-        val existingTemplates = Templates(binderViewModel.readTemplateSp()).values
+        val existingJson = binderViewModel.readTemplateSp()
+        if (existingJson == null) {
+            Toast.makeText(context, R.string.save_template_failed, Toast.LENGTH_SHORT).show()
+            return false
+        }
+        val existingTemplates = Templates(existingJson).values
         val nameConflict = existingTemplates.any {
             it.templateName == name && it.templateName != templateName
         }
-        if (nameConflict) return
+        if (nameConflict) {
+            Toast.makeText(context, R.string.template_name_exists, Toast.LENGTH_SHORT).show()
+            return false
+        }
 
         val template = Template(
             templateName = name,
@@ -180,6 +192,8 @@ fun CreateTemplateScreen(
             existingTemplates.filterNot { it.templateName == templateName } + template
         )
         binderViewModel.writeSp(TEMPLATE_PREFERENCES, json)
+        Toast.makeText(context, R.string.template_saved, Toast.LENGTH_SHORT).show()
+        return true
     }
 
     Scaffold(
@@ -191,8 +205,12 @@ fun CreateTemplateScreen(
                     stringResource(R.string.create_template_title)
                 },
                 onNavigateBack = {
-                    saveTemplate()
                     onNavigateBack()
+                },
+                actions = {
+                    TextButton(onClick = { saveTemplate() }) {
+                        Text(stringResource(R.string.template_save_button))
+                    }
                 },
             )
         },

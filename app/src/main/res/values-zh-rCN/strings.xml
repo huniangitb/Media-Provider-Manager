@@ -163,6 +163,9 @@
     <string name="remote_template_redirects">重定向：%d 条规则</string>
     <string name="remote_template_source">来源：%s</string>
     <string name="remote_template_sandbox">沙盒：已启用</string>
+    <string name="save_template_failed">保存失败，模块可能未激活</string>
+    <string name="template_saved">模板已保存</string>
+    <string name="template_save_button">保存</string>
     <string name="remote_template_injected_only">仅已注入应用</string>
     <string name="remote_template_all_apps">所有应用</string>
     <string name="remote_template_redirect_item">%s → %s</string>
