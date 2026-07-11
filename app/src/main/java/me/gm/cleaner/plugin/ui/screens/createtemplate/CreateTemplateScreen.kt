@@ -188,9 +188,17 @@ fun CreateTemplateScreen(
             redirectRules = editableRedirectRules.toList().ifEmpty { null },
         )
 
-        val json = Template.GSON.toJson(
+        val jsonRaw = Template.GSON.toJson(
             existingTemplates.filterNot { it.templateName == templateName } + template
         )
+        // 本地模板不写入 global_inject 字段（仅远程模板使用）
+        val json = try {
+            val arr = com.google.gson.JsonParser.parseString(jsonRaw).asJsonArray
+            for (i in 0 until arr.size()) {
+                arr.get(i).asJsonObject.remove("global_inject")
+            }
+            arr.toString()
+        } catch (_: Exception) { jsonRaw }
         binderViewModel.writeSp(TEMPLATE_PREFERENCES, json)
         Toast.makeText(context, R.string.template_saved, Toast.LENGTH_SHORT).show()
         return true
