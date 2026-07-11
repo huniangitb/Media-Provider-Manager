@@ -17,6 +17,7 @@
 package me.gm.cleaner.plugin.model
 
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import com.google.gson.annotations.SerializedName
 import me.gm.cleaner.plugin.xposed.hooker.InsertHooker
 import me.gm.cleaner.plugin.xposed.hooker.QueryHooker
@@ -45,7 +46,7 @@ data class Template(
     @Transient val source: String = "local",
 ) {
     companion object {
-        val GSON: Gson = Gson()
+        val GSON: Gson = GsonBuilder().disableHtmlEscaping().create()
 
         /** 供 UI 层使用：将相对路径/通配符路径解析为绝对路径 */
         private val storagePathRegex = Regex("^/storage/emulated/\\d+(/|$)")
