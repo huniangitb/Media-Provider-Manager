@@ -192,12 +192,13 @@ fun CreateTemplateScreen(
             existingTemplates.filterNot { it.templateName == templateName } + template
         )
         // 本地模板不写入 global_inject 字段（仅远程模板使用）
+        // 使用 Template.GSON 序列化，确保 disableHtmlEscaping 生效，避免路径出现 \/
         val json = try {
             val arr = com.google.gson.JsonParser.parseString(jsonRaw).asJsonArray
             for (i in 0 until arr.size()) {
                 arr.get(i).asJsonObject.remove("global_inject")
             }
-            arr.toString()
+            Template.GSON.toJson(arr)
         } catch (_: Exception) { jsonRaw }
         binderViewModel.writeSp(TEMPLATE_PREFERENCES, json)
         Toast.makeText(context, R.string.template_saved, Toast.LENGTH_SHORT).show()
