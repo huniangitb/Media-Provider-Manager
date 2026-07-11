@@ -62,6 +62,18 @@ fun templateAllowPathSummary(context: Context, template: Template): String? =
             )
         }
 
+/** 模板的规则总数（用于列表展示，不显示具体规则以节约空间） */
+fun templateRuleCount(template: Template): Int {
+    var count = 0
+    if (template.enableSandbox) count++
+    if (!template.permittedMediaTypes.isNullOrEmpty()) count++
+    count += template.filterPath?.size ?: 0
+    count += template.readOnlyPaths?.size ?: 0
+    count += template.allowPaths?.size ?: 0
+    count += template.redirectRules?.size ?: 0
+    return count
+}
+
 /** 模板是否全局范围（apply_to_app 包含 "*"） */
 fun templateIsGlobal(template: Template): Boolean =
     template.applyToApp?.contains("*") == true

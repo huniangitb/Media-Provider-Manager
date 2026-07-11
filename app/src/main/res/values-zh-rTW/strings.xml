@@ -73,6 +73,8 @@
     <string name="template_management_title">模板管理</string>
     <string name="template_management_local_title">本地模板管理</string>
     <string name="applied_app_count">應用到 %d 個應用</string>
+    <string name="template_count">%d 個模板</string>
+    <string name="template_rule_count">%d 條規則</string>
     <string name="create_template_title">建立模板</string>
     <string name="edit_template_title">編輯模板</string>
     <string name="template_name_title">模板名</string>
