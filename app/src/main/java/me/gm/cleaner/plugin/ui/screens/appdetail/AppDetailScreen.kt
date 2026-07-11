@@ -75,8 +75,10 @@ import me.gm.cleaner.plugin.ui.components.SecondaryTopBar
 import me.gm.cleaner.plugin.ui.module.BinderViewModel
 import me.gm.cleaner.plugin.ui.screens.templating.templateAllowPathSummary
 import me.gm.cleaner.plugin.ui.screens.templating.templateFilterPathSummary
+import me.gm.cleaner.plugin.ui.screens.templating.templateIsGlobal
 import me.gm.cleaner.plugin.ui.screens.templating.templateMediaTypeSummary
 import me.gm.cleaner.plugin.ui.screens.templating.templateOperationSummary
+import me.gm.cleaner.plugin.ui.screens.templating.templateRuleCount
 import me.gm.cleaner.plugin.ui.screens.templating.templateScopeLabel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -388,34 +390,45 @@ private fun AppliedTemplateCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                templateMediaTypeSummary(context, template)?.let {
+                if (isGlobal) {
+                    // 全局模板：保留具体路径展示，便于核对覆盖范围
+                    templateMediaTypeSummary(context, template)?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    templateFilterPathSummary(context, template)?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    templateAllowPathSummary(context, template)?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 4.dp),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                } else {
+                    // 非全局模板：不展示放行/过滤等具体路径以节约空间，改用规则数量摘要
                     Text(
-                        text = it,
+                        text = stringResource(R.string.template_rule_count, templateRuleCount(template)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                templateFilterPathSummary(context, template)?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                templateAllowPathSummary(context, template)?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 4.dp),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
