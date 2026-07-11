@@ -217,7 +217,7 @@ fun CreateTemplateScreen(
                     onNavigateBack()
                 },
                 actions = {
-                    TextButton(onClick = { saveTemplate() }) {
+                    TextButton(onClick = { if (saveTemplate()) onSave() }) {
                         Text(stringResource(R.string.template_save_button))
                     }
                 },
