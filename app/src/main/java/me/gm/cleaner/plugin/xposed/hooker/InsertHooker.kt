@@ -232,33 +232,33 @@ class InsertHooker(private val service: ManagerService) : XposedInterface.Hooker
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
-                val resolveVolumeName = thisObject.javaClass.getDeclaredMethod("resolveVolumeName", Uri::class.java)
-                resolveVolumeName.isAccessible = true
+                val resolveVolumeName = findMethodUp(thisObject.javaClass, "resolveVolumeName", Uri::class.java)
+                    ?: return
                 val resolvedVolumeName = resolveVolumeName.invoke(thisObject, uri) as String
 
-                val getVolumePath = thisObject.javaClass.getDeclaredMethod("getVolumePath", String::class.java)
-                getVolumePath.isAccessible = true
+                val getVolumePath = findMethodUp(thisObject.javaClass, "getVolumePath", String::class.java)
+                    ?: return
                 val volumePath = getVolumePath.invoke(thisObject, resolvedVolumeName) as File
 
                 val fileUtilsClass = Class.forName(
                     "com.android.providers.media.util.FileUtils", false, service.classLoader
                 )
-                val isFuseThread = thisObject.javaClass.getDeclaredMethod("isFuseThread")
-                isFuseThread.isAccessible = true
+                val isFuseThread = findMethodUp(thisObject.javaClass, "isFuseThread")
+                    ?: return
                 val isFuse = isFuseThread.invoke(thisObject) as Boolean
 
-                val sanitizeValues = fileUtilsClass.getDeclaredMethod("sanitizeValues", ContentValues::class.java, Boolean::class.javaPrimitiveType)
-                sanitizeValues.isAccessible = true
+                val sanitizeValues = findMethodUp(fileUtilsClass, "sanitizeValues", ContentValues::class.java, java.lang.Boolean.TYPE)
+                    ?: return
                 sanitizeValues.invoke(null, values, !isFuse)
 
-                val computeDataFromValues = fileUtilsClass.getDeclaredMethod("computeDataFromValues", ContentValues::class.java, File::class.java, Boolean::class.javaPrimitiveType)
-                computeDataFromValues.isAccessible = true
+                val computeDataFromValues = findMethodUp(fileUtilsClass, "computeDataFromValues", ContentValues::class.java, File::class.java, java.lang.Boolean.TYPE)
+                    ?: return
                 computeDataFromValues.invoke(null, values, volumePath, isFuse)
 
                 var res = File(values.getAsString(MediaStore.MediaColumns.DATA))
 
-                val buildUniqueFile = fileUtilsClass.getDeclaredMethod("buildUniqueFile", File::class.java, String::class.java, String::class.java)
-                buildUniqueFile.isAccessible = true
+                val buildUniqueFile = findMethodUp(fileUtilsClass, "buildUniqueFile", File::class.java, String::class.java, String::class.java)
+                    ?: return
                 res = buildUniqueFile.invoke(null, res.parentFile, mimeType, res.name) as File
 
                 values.put(MediaStore.MediaColumns.DATA, res.absolutePath)
@@ -269,32 +269,32 @@ class InsertHooker(private val service: ManagerService) : XposedInterface.Hooker
                 return
             }
         } else {
-            val resolveVolumeName = thisObject.javaClass.getDeclaredMethod("resolveVolumeName", Uri::class.java)
-            resolveVolumeName.isAccessible = true
+            val resolveVolumeName = findMethodUp(thisObject.javaClass, "resolveVolumeName", Uri::class.java)
+                ?: return
             val resolvedVolumeName = resolveVolumeName.invoke(thisObject, uri) as String
 
-            val sanitizePath = thisObject.javaClass.getDeclaredMethod("sanitizePath", String::class.java)
-            sanitizePath.isAccessible = true
+            val sanitizePath = findMethodUp(thisObject.javaClass, "sanitizePath", String::class.java)
+                ?: return
             val relativePath = sanitizePath.invoke(thisObject,
                 values.getAsString(MediaStore.MediaColumns.RELATIVE_PATH)
             )
 
-            val sanitizeDisplayName = thisObject.javaClass.getDeclaredMethod("sanitizeDisplayName", String::class.java)
-            sanitizeDisplayName.isAccessible = true
+            val sanitizeDisplayName = findMethodUp(thisObject.javaClass, "sanitizeDisplayName", String::class.java)
+                ?: return
             val displayName = sanitizeDisplayName.invoke(thisObject,
                 values.getAsString(MediaStore.MediaColumns.DISPLAY_NAME)
             )
 
-            val getVolumePath = thisObject.javaClass.getDeclaredMethod("getVolumePath", String::class.java)
-            getVolumePath.isAccessible = true
+            val getVolumePath = findMethodUp(thisObject.javaClass, "getVolumePath", String::class.java)
+                ?: return
             var res = getVolumePath.invoke(thisObject, resolvedVolumeName) as File
 
-            val buildPath = Environment::class.java.getDeclaredMethod("buildPath", File::class.java, Array<String>::class.java)
-            buildPath.isAccessible = true
+            val buildPath = findMethodUp(Environment::class.java, "buildPath", File::class.java, Array<String>::class.java)
+                ?: return
             res = buildPath.invoke(null, res, arrayOf(relativePath as? String ?: "")) as File
 
-            val buildUniqueFile = FileUtils::class.java.getDeclaredMethod("buildUniqueFile", File::class.java, String::class.java, String::class.java)
-            buildUniqueFile.isAccessible = true
+            val buildUniqueFile = findMethodUp(FileUtils::class.java, "buildUniqueFile", File::class.java, String::class.java, String::class.java)
+                ?: return
             res = buildUniqueFile.invoke(null, res, mimeType, displayName) as File
 
             values.put(MediaStore.MediaColumns.DATA, res.absolutePath)
