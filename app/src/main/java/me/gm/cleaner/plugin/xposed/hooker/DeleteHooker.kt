@@ -89,17 +89,23 @@ class DeleteHooker(private val service: ManagerService) : XposedInterface.Hooker
                 try {
                     when {
                         Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
-                            val enforceCallingPermission = thisObj.javaClass
-                                .getDeclaredMethod("enforceCallingPermission", Uri::class.java, Bundle::class.java, Boolean::class.javaPrimitiveType)
-                            enforceCallingPermission.isAccessible = true
-                            enforceCallingPermission.invoke(thisObj, uri, extras, true)
+                            val enforceCallingPermission = findMethodUp(
+                                thisObj.javaClass, "enforceCallingPermission",
+                                Uri::class.java, Bundle::class.java, java.lang.Boolean.TYPE
+                            )
+                            if (enforceCallingPermission != null) {
+                                enforceCallingPermission.invoke(thisObj, uri, extras, true)
+                            }
                         }
 
                         Build.VERSION.SDK_INT == Build.VERSION_CODES.Q -> {
-                            val enforceCallingPermission = thisObj.javaClass
-                                .getDeclaredMethod("enforceCallingPermission", Uri::class.java, Boolean::class.javaPrimitiveType)
-                            enforceCallingPermission.isAccessible = true
-                            enforceCallingPermission.invoke(thisObj, uri, true)
+                            val enforceCallingPermission = findMethodUp(
+                                thisObj.javaClass, "enforceCallingPermission",
+                                Uri::class.java, java.lang.Boolean.TYPE
+                            )
+                            if (enforceCallingPermission != null) {
+                                enforceCallingPermission.invoke(thisObj, uri, true)
+                            }
                         }
                     }
                 } catch (e: InvocationTargetException) {
@@ -111,11 +117,13 @@ class DeleteHooker(private val service: ManagerService) : XposedInterface.Hooker
                 }
 
                 val qb = callGetQueryBuilderDelete(thisObj, TYPE_DELETE, match, uri, extras)
-                if (qb == null) return chain.proceed()
+                if (qb == null) {
+                    L.e("DeleteHooker", "QueryBuilder is null (getQueryBuilder reflection failed), skipping delete hook. uri=$uri")
+                    return chain.proceed()
+                }
                 val helper = try {
-                    val getDbForUri = thisObj.javaClass.getDeclaredMethod("getDatabaseForUri", Uri::class.java)
-                    getDbForUri.isAccessible = true
-                    getDbForUri.invoke(thisObj, uri)
+                    val getDbForUri = findMethodUp(thisObj.javaClass, "getDatabaseForUri", Uri::class.java)
+                    if (getDbForUri != null) getDbForUri.invoke(thisObj, uri) else null
                 } catch (t: Throwable) {
                     dlog("Error calling getDatabaseForUri in DeleteHooker: $t")
                     null

@@ -42,31 +42,43 @@ import java.util.function.Function
 class QueryHooker(private val service: ManagerService) : XposedInterface.Hooker, MediaProviderHooker {
     @Throws(Throwable::class)
     override fun intercept(chain: XposedInterface.Chain): Any? {
-        if (chain.isFuseThread) {
-            L.d("QueryHooker", "Skipped: FUSE thread detected")
+        L.e("QueryHooker", "=== intercept called ===")
+        val isFuse = try { chain.isFuseThread } catch (t: Throwable) { L.e("QueryHooker", "isFuseThread threw", t); false }
+        L.e("QueryHooker", "isFuseThread=$isFuse")
+        if (isFuse) {
+            L.e("QueryHooker", "SKIP: FUSE thread detected")
             return chain.proceed()
         }
-        if (chain.isSystemCallingPackage) {
-            dlog("Skipping system query from ${chain.callingPackage}")
-            return chain.proceed()
-        }
+        val callingPkg = try { chain.callingPackage } catch (t: Throwable) { L.e("QueryHooker", "callingPackage threw", t); "" }
+        L.e("QueryHooker", "callingPkg='$callingPkg'")
         /** ARGUMENTS */
-        val uri = chain.getArg(0) as Uri
+        val uri = try { chain.getArg(0) as Uri } catch (t: Throwable) { L.e("QueryHooker", "getArg(0) failed", t); return chain.proceed() }
         val projection = (chain.getArgs().getOrNull(1) as? Array<*>)?.mapNotNull { it as? String }?.toTypedArray()
         val queryArgs = chain.getArgs().getOrNull(2) as? Bundle ?: Bundle.EMPTY
         val signal = chain.getArgs().getOrNull(3) as? CancellationSignal
+        L.e("QueryHooker", "uri=$uri, projection=${projection?.contentToString()}, callingPkg='$callingPkg'")
 
-        val callingPkg = chain.callingPackage
-        L.d("QueryHooker", "intercept: uri=$uri, callingPkg='$callingPkg', isFuse=false")
         val isSystemMaintenance = callingPkg in MediaTables.SYSTEM_CALLING_PACKAGES &&
                 projection != null &&
                 projection.none { it.equals(FileColumns.DATA, ignoreCase = true) || it.equals("_data", ignoreCase = true) }
 
         if (isSystemMaintenance) {
-            dlog("Skipping system maintenance query from $callingPkg")
+            L.e("QueryHooker", "SKIP: system maintenance query from $callingPkg")
             return chain.proceed()
         }
-        dlog("queryInternal: uri=$uri, projection=${projection?.contentToString()}, callingPackage=$callingPkg")
+        L.e("QueryHooker", "isClientQuery check: callingPkg='$callingPkg', uri=$uri")
+        if (isClientQuery(callingPkg, uri)) {
+            L.e("QueryHooker", "handleClientQuery: callingPkg='$callingPkg', uri=$uri")
+            return handleClientQuery(projection, queryArgs)
+        }
+        L.e("QueryHooker", "matchUri: uri=$uri")
+        val table = try {
+            chain.matchUri(uri, chain.isCallingPackageAllowedHidden)
+        } catch (t: Throwable) {
+            L.e("QueryHooker", "matchUri failed for $uri, callingPackage=$callingPkg", t)
+            return chain.proceed()
+        }
+        L.e("QueryHooker", "matchUri result: table=$table")
 
         /** PARSE */
         val query = Bundle(queryArgs)
@@ -85,73 +97,63 @@ class QueryHooker(private val service: ManagerService) : XposedInterface.Hooker,
                     Function::class.java
                 )
                 resolveQueryArgs.isAccessible = true
-                val thisObj = chain.thisObject ?: return chain.proceed()
+                val thisObj = chain.thisObject ?: return chain.proceed().also { L.e("QueryHooker", "SKIP: thisObject is null for resolveQueryArgs") }
                 resolveQueryArgs.invoke(null, query, honoredArgs,
                     Function<String, String> { t ->
-                        val ensureCustomCollator = thisObj.javaClass.getDeclaredMethod("ensureCustomCollator", String::class.java)
-                        ensureCustomCollator.isAccessible = true
+                        val ensureCustomCollator = findMethodUp(thisObj.javaClass, "ensureCustomCollator", String::class.java)
+                            ?: return@Function t
                         ensureCustomCollator.invoke(thisObj, t) as String
                     }
                 )
             } catch (t: Throwable) {
-                dlog("Error in resolveQueryArgs: $t")
+                L.e("QueryHooker", "Error in resolveQueryArgs: $t")
             }
         }
-        L.d("QueryHooker", "About to check isClientQuery: callingPkg='$callingPkg', uri=$uri")
-        if (isClientQuery(callingPkg, uri)) {
-            L.d("QueryHooker", "isClientQuery returned TRUE, handling client query")
-            return handleClientQuery(projection, query)
-        }
-        L.d("QueryHooker", "isClientQuery returned FALSE, proceeding with normal hook")
-        val table = try {
-            chain.matchUri(uri, chain.isCallingPackageAllowedHidden)
-        } catch (t: Throwable) {
-            dlog("Skipping query hook because matchUri failed for $uri: $t")
-            return chain.proceed()
-        }
-        dlog("Matched table: $table")
+
         val dataProjection = when {
             projection == null -> null
             table in setOf(MediaTables.IMAGES_THUMBNAILS, MediaTables.VIDEO_THUMBNAILS) -> projection + FileColumns.DATA
             else -> projection + arrayOf(FileColumns.DATA, FileColumns.MIME_TYPE)
         }
-        val thisObj = chain.thisObject ?: return chain.proceed()
+        val thisObj = chain.thisObject ?: return chain.proceed().also { L.e("QueryHooker", "SKIP: thisObject is null") }
         val helper = try {
-            val getDbForUri = thisObj.javaClass.getDeclaredMethod("getDatabaseForUri", Uri::class.java)
-            getDbForUri.isAccessible = true
-            getDbForUri.invoke(thisObj, uri)
+            val getDbForUri = findMethodUp(thisObj.javaClass, "getDatabaseForUri", Uri::class.java)
+            if (getDbForUri != null) getDbForUri.invoke(thisObj, uri) else null
         } catch (t: Throwable) {
-            dlog("Error calling getDatabaseForUri: $t")
+            L.e("QueryHooker", "getDatabaseForUri failed: $t")
             null
         }
+        L.e("QueryHooker", "getDatabaseForUri result: helper=${helper != null}")
         val qb = callGetQueryBuilder(thisObj, TYPE_QUERY, table, uri, query, honoredArgs)
+        L.e("QueryHooker", "callGetQueryBuilder result: qb=${qb != null}")
 
         if (qb == null) {
-            dlog("QueryBuilder is null, skipping hook logic")
+            L.e("QueryHooker", "QueryBuilder is null (getQueryBuilder reflection failed), skipping hook logic and recording. uri=$uri, callingPackage=$callingPkg")
             return chain.proceed()
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
-                val getTargetSdk = thisObj.javaClass.getDeclaredMethod("getCallingPackageTargetSdkVersion")
-                getTargetSdk.isAccessible = true
-                val targetSdkVersion = getTargetSdk.invoke(thisObj) as Int
-                val databaseUtilsClass = Class.forName(
-                    "com.android.providers.media.util.DatabaseUtils", false, service.classLoader
-                )
-                if (targetSdkVersion < Build.VERSION_CODES.R) {
-                    val recoverAbusiveSortOrder = databaseUtilsClass.getDeclaredMethod("recoverAbusiveSortOrder", Bundle::class.java)
-                    recoverAbusiveSortOrder.isAccessible = true
-                    recoverAbusiveSortOrder.invoke(null, query)
+                val getTargetSdk = findMethodUp(thisObj.javaClass, "getCallingPackageTargetSdkVersion")
+                if (getTargetSdk != null) {
+                    val targetSdkVersion = getTargetSdk.invoke(thisObj) as Int
+                    val databaseUtilsClass = Class.forName(
+                        "com.android.providers.media.util.DatabaseUtils", false, service.classLoader
+                    )
+                    if (targetSdkVersion < Build.VERSION_CODES.R) {
+                        val recoverAbusiveSortOrder = databaseUtilsClass.getDeclaredMethod("recoverAbusiveSortOrder", Bundle::class.java)
+                        recoverAbusiveSortOrder.isAccessible = true
+                        recoverAbusiveSortOrder.invoke(null, query)
 
-                    val recoverAbusiveLimit = databaseUtilsClass.getDeclaredMethod("recoverAbusiveLimit", Uri::class.java, Bundle::class.java)
-                    recoverAbusiveLimit.isAccessible = true
-                    recoverAbusiveLimit.invoke(null, uri, query)
-                }
-                if (targetSdkVersion < Build.VERSION_CODES.Q) {
-                    val recoverAbusiveSelection = databaseUtilsClass.getDeclaredMethod("recoverAbusiveSelection", Bundle::class.java)
-                    recoverAbusiveSelection.isAccessible = true
-                    recoverAbusiveSelection.invoke(null, query)
+                        val recoverAbusiveLimit = databaseUtilsClass.getDeclaredMethod("recoverAbusiveLimit", Uri::class.java, Bundle::class.java)
+                        recoverAbusiveLimit.isAccessible = true
+                        recoverAbusiveLimit.invoke(null, uri, query)
+                    }
+                    if (targetSdkVersion < Build.VERSION_CODES.Q) {
+                        val recoverAbusiveSelection = databaseUtilsClass.getDeclaredMethod("recoverAbusiveSelection", Bundle::class.java)
+                        recoverAbusiveSelection.isAccessible = true
+                        recoverAbusiveSelection.invoke(null, query)
+                    }
                 }
             } catch (t: Throwable) {
                 dlog("Error in targetSdkVersion processing: $t")
@@ -161,7 +163,16 @@ class QueryHooker(private val service: ManagerService) : XposedInterface.Hooker,
         val c = try {
             when {
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
-                    val qbQuery = qb.javaClass.getDeclaredMethod("query", Any::class.java, Array<String>::class.java, Bundle::class.java, CancellationSignal::class.java)
+                    // 不能直接用 getDeclaredMethod 精确匹配参数类型，因为 QB 的 query 方法
+                    // 参数类型在不同 Android 版本上可能不同（如 DatabaseHelper/SQLiteDatabase）。
+                    // 用 findMethodsUp 按名查找 + 参数个数匹配，还原 XposedHelpers.callMethod 行为
+                    val qbQuery = findMethodsUp(qb.javaClass, "query").firstOrNull { m ->
+                        m.parameterCount == 4
+                    }
+                    if (qbQuery == null) {
+                        L.e("QueryHooker", "qb.query(4 params) not found on ${qb.javaClass.name}")
+                        return chain.proceed()
+                    }
                     qbQuery.isAccessible = true
                     qbQuery.invoke(qb, helper, dataProjection, query, signal)
                 }
@@ -173,9 +184,13 @@ class QueryHooker(private val service: ManagerService) : XposedInterface.Hooker,
                     val sortOrder =
                         query.getString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER) ?: let {
                             if (query.containsKey(ContentResolver.QUERY_ARG_SORT_COLUMNS)) {
-                                val createSqlSortClause = ContentResolver::class.java.getDeclaredMethod("createSqlSortClause", Bundle::class.java)
-                                createSqlSortClause.isAccessible = true
-                                createSqlSortClause.invoke(null, query) as String?
+                                val createSqlSortClause = findMethodsUp(ContentResolver::class.java, "createSqlSortClause").firstOrNull { m ->
+                                    m.parameterCount == 1
+                                }
+                                if (createSqlSortClause != null) {
+                                    createSqlSortClause.isAccessible = true
+                                    createSqlSortClause.invoke(null, query) as String?
+                                } else null
                             } else {
                                 null
                             }
@@ -185,11 +200,16 @@ class QueryHooker(private val service: ManagerService) : XposedInterface.Hooker,
                     val having = null
                     val limit = uri.getQueryParameter("limit")
 
-                    val getWritableDb = helper?.javaClass?.getDeclaredMethod("getWritableDatabase")
-                    getWritableDb?.isAccessible = true
-                    val db = getWritableDb?.invoke(helper)
+                    val getWritableDb = findMethodsUp(helper?.javaClass ?: return chain.proceed(), "getWritableDatabase").firstOrNull()
+                    val db = getWritableDb?.let { it.isAccessible = true; it.invoke(helper) }
 
-                    val qbQuery = qb.javaClass.getDeclaredMethod("query", Any::class.java, Array<String>::class.java, String::class.java, Array<String>::class.java, String::class.java, String::class.java, String::class.java, String::class.java, CancellationSignal::class.java)
+                    val qbQuery = findMethodsUp(qb.javaClass, "query").firstOrNull { m ->
+                        m.parameterCount == 9
+                    }
+                    if (qbQuery == null) {
+                        L.e("QueryHooker", "qb.query(9 params) not found on ${qb.javaClass.name}")
+                        return chain.proceed()
+                    }
                     qbQuery.isAccessible = true
                     qbQuery.invoke(qb, db, dataProjection, selection, selectionArgs, groupBy, having, sortOrder, limit, signal)
                 }
@@ -197,9 +217,9 @@ class QueryHooker(private val service: ManagerService) : XposedInterface.Hooker,
                 else -> throw UnsupportedOperationException()
             } as Cursor
         } catch (t: Throwable) {
-            dlog("Error in qb.query: $t")
-            return chain.proceed()
-        }
+                        L.e("QueryHooker", "Error in qb.query: $t")
+                        return chain.proceed()
+                    }
 
         // Track if cursor was handed off to avoid double-close
         var cursorHandled = false

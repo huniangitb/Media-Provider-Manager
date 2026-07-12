@@ -35,12 +35,72 @@ interface MediaProviderHooker {
 
     fun dlog(message: String) = L.dlog(message)
 
+    /**
+     * 向上递归查找方法（含父类），替代旧 XposedHelpers.callMethod 的查找行为。
+     * 仅在当前类用 getDeclaredMethod 查找会漏掉父类方法，导致回归。
+     */
+    fun findMethodUp(clazz: Class<*>, name: String, vararg paramTypes: Class<*>): java.lang.reflect.Method? {
+        var c: Class<*>? = clazz
+        while (c != null && c != Any::class.java && c != Object::class.java) {
+            try {
+                val m = c.getDeclaredMethod(name, *paramTypes)
+                m.isAccessible = true
+                return m
+            } catch (_: NoSuchMethodException) {
+                // 继续向父类查找
+            }
+            c = c.superclass
+        }
+        L.e("MediaProviderHooker", "findMethodUp FAILED: $name(${
+            paramTypes.joinToString(", ") { it.simpleName }
+        }) on ${clazz.name} and its superclasses")
+        return null
+    }
+
+    /**
+     * 向上递归查找方法（按名匹配，含父类），用于 getQueryBuilder 这类多候选场景。
+     */
+    fun findMethodsUp(clazz: Class<*>, name: String): List<java.lang.reflect.Method> {
+        val result = mutableListOf<java.lang.reflect.Method>()
+        var c: Class<*>? = clazz
+        while (c != null && c != Any::class.java && c != Object::class.java) {
+            c.declaredMethods.forEach { m ->
+                if (m.name == name) {
+                    m.isAccessible = true
+                    result.add(m)
+                }
+            }
+            c = c.superclass
+        }
+        return result
+    }
+
+    /**
+     * 向上递归查找字段（含父类），替代旧 XposedHelpers.getObjectField 的查找行为。
+     */
+    fun findFieldUp(clazz: Class<*>, name: String): java.lang.reflect.Field? {
+        var c: Class<*>? = clazz
+        while (c != null && c != Any::class.java && c != Object::class.java) {
+            try {
+                val f = c.getDeclaredField(name)
+                f.isAccessible = true
+                return f
+            } catch (_: NoSuchFieldException) {
+                // 继续向父类查找
+            }
+            c = c.superclass
+        }
+        L.e("MediaProviderHooker", "findFieldUp FAILED: $name on ${clazz.name} and its superclasses")
+        return null
+    }
+
     private fun resolveQueryBuilderMethod(thisObject: Any) {
         if (isQueryBuilderResolved.get()) return
         synchronized(MediaProviderHooker::class.java) {
             if (isQueryBuilderResolved.get()) return
             val clazz = thisObject.javaClass
-            val methods = clazz.declaredMethods.filter { it.name == "getQueryBuilder" }
+            // 必须向上查父类，否则 MediaProvider 重构后 getQueryBuilder 移到父类会漏掉
+            val methods = findMethodsUp(clazz, "getQueryBuilder")
 
             val method = methods.find { m ->
                 val params = m.parameterTypes
@@ -55,7 +115,20 @@ interface MediaProviderHooker {
 
             method?.isAccessible = true
             queryBuilderMethodInstance = method
-            dlog(if (method != null) "Resolved getQueryBuilder: $method" else "Failed to resolve getQueryBuilder")
+            if (method != null) {
+                dlog("Resolved getQueryBuilder: $method")
+            } else {
+                // 失败时打印所有候选签名，便于现场诊断
+                L.e("MediaProviderHooker", "Failed to resolve getQueryBuilder on ${clazz.name}. Candidates:")
+                if (methods.isEmpty()) {
+                    L.e("MediaProviderHooker", "  (no getQueryBuilder found in class hierarchy)")
+                } else {
+                    methods.forEach { m ->
+                        val params = m.parameterTypes.joinToString(", ") { it.name }
+                        L.e("MediaProviderHooker", "  ${m.name}($params) declared in ${m.declaringClass.name}")
+                    }
+                }
+            }
             isQueryBuilderResolved.set(true)
         }
     }
@@ -112,7 +185,17 @@ interface MediaProviderHooker {
     }
 
     fun XposedInterface.Chain.ensureMediaProvider() {
-        require(executable.declaringClass.name == "com.android.providers.media.MediaProvider")
+        // 允许 MediaProvider 及其任何子类/父类继承链中的方法
+        // 不能用 require(declaringClass == ...) 精确匹配，因为不同 ROM 上
+        // queryInternal/insertFile/deleteInternal 可能在不同类中声明
+        val name = executable.declaringClass.name
+        if (name != "com.android.providers.media.MediaProvider" &&
+            !name.startsWith("com.android.providers.media.")
+        ) {
+            throw IllegalArgumentException(
+                "Expected MediaProvider but got ${executable.declaringClass.name}"
+            )
+        }
     }
 
     val XposedInterface.Chain.isFuseThread: Boolean
@@ -129,8 +212,8 @@ interface MediaProviderHooker {
             // Try to detect via alternative method on MediaProvider itself
             try {
                 val thisObj = thisObject ?: return false
-                val isFuseThread = thisObj.javaClass.getDeclaredMethod("isFuseThread")
-                isFuseThread.isAccessible = true
+                val isFuseThread = findMethodUp(thisObj.javaClass, "isFuseThread")
+                    ?: return false
                 isFuseThread.invoke(thisObj) as Boolean
             } catch (e2: Throwable) {
                 // If we cannot determine, default to false to avoid blocking legitimate queries
@@ -153,9 +236,8 @@ interface MediaProviderHooker {
             ensureMediaProvider()
             val thisObj = thisObject ?: return ""
             return try {
-                val mCallingIdentityField = thisObj.javaClass
-                    .getDeclaredField("mCallingIdentity")
-                mCallingIdentityField.isAccessible = true
+                val mCallingIdentityField = findFieldUp(thisObj.javaClass, "mCallingIdentity")
+                    ?: return ""
                 val threadLocal = mCallingIdentityField.get(thisObj) as ThreadLocal<*>
                 val identity = threadLocal.get()
                 if (identity == null) {
@@ -183,16 +265,17 @@ interface MediaProviderHooker {
         get() {
             ensureMediaProvider()
             val thisObj = thisObject ?: return false
-            val method = thisObj.javaClass.getDeclaredMethod("isCallingPackageAllowedHidden")
-            method.isAccessible = true
+            val method = findMethodUp(thisObj.javaClass, "isCallingPackageAllowedHidden")
+                ?: return false
             return method.invoke(thisObj) as Boolean
         }
 
     fun XposedInterface.Chain.matchUri(uri: Uri, allowHidden: Boolean): Int {
         ensureMediaProvider()
         val thisObj = thisObject ?: return -1
-        val method = thisObj.javaClass.getDeclaredMethod("matchUri", Uri::class.java, Boolean::class.javaPrimitiveType)
-        method.isAccessible = true
+        val method = findMethodUp(
+            thisObj.javaClass, "matchUri", Uri::class.java, java.lang.Boolean.TYPE
+        ) ?: return -1
         return method.invoke(thisObj, uri, allowHidden) as Int
     }
 }
