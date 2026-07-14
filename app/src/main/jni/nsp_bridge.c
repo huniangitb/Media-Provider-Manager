@@ -26,6 +26,7 @@
 #include <stddef.h>
 #include <errno.h>
 #include <ctype.h>
+#include <time.h>
 #include <android/log.h>
 
 #define LOG_TAG "nsp_bridge-JNI"
@@ -524,85 +525,94 @@ Java_me_gm_cleaner_plugin_xposed_NativeConfigBridge_nativeSubscribeConfig(
     }
 
     // 4) Loop: poll + recv → process → callback
-    int consecutive_timeouts = 0;
-#define MAX_CONSECUTIVE_TIMEOUTS 15   /* 15 × 2000ms = 30s silence → reconnect */
-
+    //
+    // 关键修复：不再因"30s 静默"自动重连。
+    // injector 只在配置变更时推送，长时间无数据是正常状态。
+    // 仅在 recv 返回对端失联错误（ECONNREFUSED/ENOTCONN/EPIPE 等）
+    // 时才认为 injector 退出，执行 reconnect。无数据时永远保持订阅，
+    // 避免服务端订阅者列表周期性抖动。
     while (__atomic_load_n(&g_subscribe_running, __ATOMIC_ACQUIRE)) {
         struct pollfd pfd;
         memset(&pfd, 0, sizeof(pfd));
         pfd.fd = sock; pfd.events = POLLIN;
         int pr = poll(&pfd, 1, 2000);
         if (pr <= 0) {
-            if (!__atomic_load_n(&g_subscribe_running, __ATOMIC_ACQUIRE)) break;  // stopped
-            consecutive_timeouts++;
-            if (consecutive_timeouts < MAX_CONSECUTIVE_TIMEOUTS) continue;  // still waiting
-
-            // Too many consecutive timeouts → injector likely gone; reconnect
-            LOGD("subscribe: %d consecutive timeouts, reconnecting...", consecutive_timeouts);
-            consecutive_timeouts = 0;
-            // 先发 UNSUBSCRIBE 再关闭旧 fd，确保 injector 及时清理
-            int old_sock = __atomic_exchange_n(&g_sub_sock, -1, __ATOMIC_ACQ_REL);
-            if (old_sock >= 0) {
-                sendto(old_sock, "UNSUBSCRIBE", 11, MSG_NOSIGNAL,
-                       (struct sockaddr *)&dest, dest_len);
-                close(old_sock);
-            }
-
-            sock = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-            if (sock < 0) { LOGE("subscribe reconnect socket failed"); __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return; }
-            __atomic_store_n(&g_sub_sock, sock, __ATOMIC_RELEASE);
-
-            memset(&local, 0, sizeof(local));
-            local.sun_family = AF_UNIX;
-            local.sun_path[0] = '\0';
-            int reconn_seq = __sync_fetch_and_add(&g_sub_counter, 1);
-            snprintf(local.sun_path + 1, sizeof(local.sun_path) - 2, "nsp_sub_%d_%d", getpid(), reconn_seq);
-            local_len = offsetof(struct sockaddr_un, sun_path) + 1 + strlen(local.sun_path + 1);
-            if (bind(sock, (struct sockaddr *)&local, local_len) < 0) {
-                LOGE("subscribe reconnect bind failed"); close(sock); __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return;
-            }
-
-            memset(&dest, 0, sizeof(dest));
-            dest.sun_family = AF_UNIX;
-            dest.sun_path[0] = '\0';
-            strncpy(dest.sun_path + 1, CONFIG_BROADCAST_SOCKET, sizeof(dest.sun_path) - 2);
-            dest_len = offsetof(struct sockaddr_un, sun_path) + 1 + strlen(CONFIG_BROADCAST_SOCKET);
-            if (sendto(sock, "SUBSCRIBE", 9, MSG_NOSIGNAL, (struct sockaddr *)&dest, dest_len) < 0) {
-                LOGE("subscribe reconnect sendto failed"); close(sock); __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return;
-            }
-
-            LOGD("subscribe: reconnected successfully");
-            // Notify Kotlin side that we reconnected
-            if (g_onError_mid) {
-                // attach JNI first
-                JNIEnv *cb_env2 = NULL;
-                int nd2 = 0;
-                int ger2 = (*g_jvm)->GetEnv(g_jvm, (void**)&cb_env2, JNI_VERSION_1_6);
-                if (ger2 == JNI_EDETACHED) {
-                    if ((*g_jvm)->AttachCurrentThread(g_jvm, &cb_env2, NULL) != JNI_OK) {
-                        cb_env2 = NULL;
-                    } else { nd2 = 1; }
-                } else if (ger2 != JNI_OK) {
-                    cb_env2 = NULL;
-                }
-                if (cb_env2 != NULL && ger2 != JNI_ERR) {
-                    jstring err = (*cb_env2)->NewStringUTF(cb_env2, "injector disconnected, reconnected");
-                    (*cb_env2)->CallVoidMethod(cb_env2, callback, g_onError_mid, err);
-                    if ((*cb_env2)->ExceptionCheck(cb_env2)) (*cb_env2)->ExceptionClear(cb_env2);
-                    (*cb_env2)->DeleteLocalRef(cb_env2, err);
-                    if (nd2) (*g_jvm)->DetachCurrentThread(g_jvm);
-                }
-            }
+            // 超时或被中断：仅检查是否被 stop，否则保持订阅继续等待
+            if (!__atomic_load_n(&g_subscribe_running, __ATOMIC_ACQUIRE)) break;
             continue;
         }
 
-        // Data received → reset timeout counter
-        consecutive_timeouts = 0;
-
+        // poll 可读 → 读取数据
         char *raw = malloc(BROADCAST_RECEIVE_MAX_SIZE);
         if (!raw) continue;
         ssize_t n = recv(sock, raw, BROADCAST_RECEIVE_MAX_SIZE - 1, MSG_DONTWAIT);
-        if (n <= 0) { free(raw); continue; }
+        if (n < 0) {
+            int e = errno;
+            free(raw);
+            // EAGAIN/EWOULDBLOCK/EINTR：暂时无数据或被中断，继续等待
+            if (e == EAGAIN || e == EWOULDBLOCK || e == EINTR) continue;
+            // 其他错误（ECONNREFUSED/ENOTCONN/EPIPE/EBADF 等）：
+            // injector 已退出或 socket 失效 → 关闭并 reconnect
+            LOGE("subscribe recv error: %s (%d), reconnecting...", strerror(e), e);
+            int old_sock = __atomic_exchange_n(&g_sub_sock, -1, __ATOMIC_ACQ_REL);
+            if (old_sock >= 0) close(old_sock);
+
+            // 重连尝试循环，直到成功或被 stop
+            while (__atomic_load_n(&g_subscribe_running, __ATOMIC_ACQUIRE)) {
+                sock = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+                if (sock < 0) { LOGE("subscribe reconnect socket failed"); __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return; }
+                __atomic_store_n(&g_sub_sock, sock, __ATOMIC_RELEASE);
+
+                memset(&local, 0, sizeof(local));
+                local.sun_family = AF_UNIX;
+                local.sun_path[0] = '\0';
+                int reconn_seq = __sync_fetch_and_add(&g_sub_counter, 1);
+                snprintf(local.sun_path + 1, sizeof(local.sun_path) - 2, "nsp_sub_%d_%d", getpid(), reconn_seq);
+                local_len = offsetof(struct sockaddr_un, sun_path) + 1 + strlen(local.sun_path + 1);
+                if (bind(sock, (struct sockaddr *)&local, local_len) < 0) {
+                    LOGE("subscribe reconnect bind failed"); close(sock);
+                    __atomic_store_n(&g_subscribe_running, 0, __ATOMIC_RELEASE); return;
+                }
+
+                memset(&dest, 0, sizeof(dest));
+                dest.sun_family = AF_UNIX;
+                dest.sun_path[0] = '\0';
+                strncpy(dest.sun_path + 1, CONFIG_BROADCAST_SOCKET, sizeof(dest.sun_path) - 2);
+                dest_len = offsetof(struct sockaddr_un, sun_path) + 1 + strlen(CONFIG_BROADCAST_SOCKET);
+                if (sendto(sock, "SUBSCRIBE", 9, MSG_NOSIGNAL, (struct sockaddr *)&dest, dest_len) < 0) {
+                    LOGE("subscribe reconnect sendto failed"); close(sock);
+                    // 退避后重试
+                    struct timespec ts = { 2, 0 };
+                    nanosleep(&ts, NULL);
+                    continue;
+                }
+
+                LOGD("subscribe: reconnected successfully");
+                // Notify Kotlin side that we reconnected
+                if (g_onError_mid) {
+                    JNIEnv *cb_env2 = NULL;
+                    int nd2 = 0;
+                    int ger2 = (*g_jvm)->GetEnv(g_jvm, (void**)&cb_env2, JNI_VERSION_1_6);
+                    if (ger2 == JNI_EDETACHED) {
+                        if ((*g_jvm)->AttachCurrentThread(g_jvm, &cb_env2, NULL) != JNI_OK) {
+                            cb_env2 = NULL;
+                        } else { nd2 = 1; }
+                    } else if (ger2 != JNI_OK) {
+                        cb_env2 = NULL;
+                    }
+                    if (cb_env2 != NULL && ger2 != JNI_ERR) {
+                        jstring err = (*cb_env2)->NewStringUTF(cb_env2, "injector disconnected, reconnected");
+                        (*cb_env2)->CallVoidMethod(cb_env2, callback, g_onError_mid, err);
+                        if ((*cb_env2)->ExceptionCheck(cb_env2)) (*cb_env2)->ExceptionClear(cb_env2);
+                        (*cb_env2)->DeleteLocalRef(cb_env2, err);
+                        if (nd2) (*g_jvm)->DetachCurrentThread(g_jvm);
+                    }
+                }
+                break;  // 重连成功，退出重连循环回到主循环
+            }
+            continue;
+        }
+        if (n == 0) { free(raw); continue; }
         raw[n] = '\0';
 
         // Attach JNI early so we can call onError on failure
