@@ -17,12 +17,17 @@
 package me.gm.cleaner.plugin.xposed
 
 import me.gm.cleaner.plugin.model.Templates
+import me.gm.cleaner.plugin.util.L
 import java.io.File
 
 class TemplatesJsonFileSpImpl(src: File) : JsonFileSpImpl(src) {
     @Volatile
-    var templates: Templates = Templates(read())
+    var templates: Templates = parseTemplates(read())
         internal set
+
+    override fun validateContent(what: String) {
+        Templates(what)
+    }
 
     override fun write(what: String) {
         super.write(what)
@@ -30,5 +35,12 @@ class TemplatesJsonFileSpImpl(src: File) : JsonFileSpImpl(src) {
         // templates with remoteValues immediately after, so we skip
         // creating an intermediate Templates without remote data.
         templates.clearCache()
+    }
+
+    private fun parseTemplates(content: String?): Templates = try {
+        Templates(content)
+    } catch (t: Throwable) {
+        L.e("Invalid template JSON in ${file.path}; disabling templates", t)
+        Templates(null)
     }
 }
