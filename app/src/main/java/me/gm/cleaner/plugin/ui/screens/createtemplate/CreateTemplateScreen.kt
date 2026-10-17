@@ -52,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,6 +72,9 @@ import me.gm.cleaner.plugin.ui.components.SectionHeader
 import me.gm.cleaner.plugin.ui.module.BinderViewModel
 import me.gm.cleaner.plugin.ui.screens.templating.hookOperationLabel
 import me.gm.cleaner.plugin.ui.screens.templating.mediaTypeLabel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val MEDIA_TYPE_PLAYLIST = 4
 
@@ -91,6 +95,7 @@ fun CreateTemplateScreen(
     binderViewModel: BinderViewModel,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val isEditing = templateName != null
 
     // Form state
@@ -156,13 +161,14 @@ fun CreateTemplateScreen(
     }
 
     // Save function, returns true if saved successfully
-    fun saveTemplate(): Boolean {
+    suspend fun saveTemplate(): Boolean {
         if (name.isBlank() || selectedOperations.isEmpty()) {
             Toast.makeText(context, R.string.template_save_validation, Toast.LENGTH_SHORT).show()
             return false
         }
 
-        val existingJson = binderViewModel.readTemplateSp()
+        // 跨进程读取放到 IO 线程，避免阻塞主线程
+        val existingJson = withContext(Dispatchers.IO) { binderViewModel.readTemplateSp() }
         if (existingJson == null) {
             Toast.makeText(context, R.string.save_template_failed, Toast.LENGTH_SHORT).show()
             return false
@@ -200,7 +206,7 @@ fun CreateTemplateScreen(
             }
             Template.GSON.toJson(arr)
         } catch (_: Exception) { jsonRaw }
-        binderViewModel.writeSp(TEMPLATE_PREFERENCES, json)
+        withContext(Dispatchers.IO) { binderViewModel.writeSp(TEMPLATE_PREFERENCES, json) }
         Toast.makeText(context, R.string.template_saved, Toast.LENGTH_SHORT).show()
         return true
     }
@@ -217,7 +223,7 @@ fun CreateTemplateScreen(
                     onNavigateBack()
                 },
                 actions = {
-                    TextButton(onClick = { if (saveTemplate()) onSave() }) {
+                    TextButton(onClick = { scope.launch { if (saveTemplate()) onSave() } }) {
                         Text(stringResource(R.string.template_save_button))
                     }
                 },

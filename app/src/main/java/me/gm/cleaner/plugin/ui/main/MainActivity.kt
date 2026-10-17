@@ -44,9 +44,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.gm.cleaner.plugin.R
 import me.gm.cleaner.plugin.dao.RootPreferences
 import me.gm.cleaner.plugin.ui.components.StatusBadgeTone
@@ -190,14 +192,17 @@ private fun DrawerHeader(
     suspend fun refreshActivationState() {
         isRefreshing = true
         val frameworkActive = ModuleActivationStore.isAppProcessHooked(context)
-        binderViewModel.refreshBinder()
-        val scopeActive = binderViewModel.pingBinder()
+        val (scopeActive, version) = withContext(Dispatchers.IO) {
+            binderViewModel.refreshBinder()
+            val active = binderViewModel.pingBinder()
+            active to if (active) binderViewModel.moduleVersion else 0
+        }
         activationState = when {
             scopeActive -> ModuleActivationState.Active
             frameworkActive -> ModuleActivationState.ScopeRestartRequired
             else -> ModuleActivationState.NotActive
         }
-        moduleVersion = if (scopeActive) binderViewModel.moduleVersion else 0
+        moduleVersion = version
         isRefreshing = false
     }
 
@@ -207,10 +212,13 @@ private fun DrawerHeader(
         }
         pollingJob = scope.launch {
             while (activationState == ModuleActivationState.ScopeRestartRequired) {
-                binderViewModel.refreshBinder()
-                if (binderViewModel.pingBinder()) {
+                val active = withContext(Dispatchers.IO) {
+                    binderViewModel.refreshBinder()
+                    binderViewModel.pingBinder()
+                }
+                if (active) {
                     activationState = ModuleActivationState.Active
-                    moduleVersion = binderViewModel.moduleVersion
+                    moduleVersion = withContext(Dispatchers.IO) { binderViewModel.moduleVersion }
                     Toast.makeText(
                         context,
                         context.getString(R.string.module_activated),

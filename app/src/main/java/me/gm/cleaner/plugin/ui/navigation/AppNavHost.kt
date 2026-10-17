@@ -39,9 +39,11 @@ fun AppNavHost(
 ) {
     // Non-blocking initialization - load data in background without blocking UI
     LaunchedEffect(binderViewModel) {
-        if (binderViewModel.pingBinder()) {
-            binderViewModel.readTemplateSp()
-            binderViewModel.readRootSp()
+        withContext(Dispatchers.IO) {
+            if (binderViewModel.pingBinder()) {
+                binderViewModel.readTemplateSp()
+                binderViewModel.readRootSp()
+            }
         }
     }
 
@@ -144,10 +146,10 @@ fun AppNavHost(
                     android.widget.Toast.makeText(context, me.gm.cleaner.plugin.R.string.backup_ok, android.widget.Toast.LENGTH_SHORT).show()
                 },
                 onRootSettingsChange = { newJson ->
-                    binderViewModel.writeRootSp(newJson)
+                    binderViewModel.writeRootSpAsync(newJson)
                 },
                 onTemplateRestore = { newJson ->
-                    binderViewModel.writeTemplateSp(newJson)
+                    binderViewModel.writeTemplateSpAsync(newJson)
                 },
             )
         }
@@ -157,7 +159,7 @@ fun AppNavHost(
                 onNavigateBack = { navController.popBackStack() },
                 onCreateTemplate = { navController.navigate(AppRoute.CreateTemplate()) },
                 onDeleteTemplate = { template ->
-                    binderViewModel.writeTemplateSp(
+                    binderViewModel.writeTemplateSpAsync(
                         Template.GSON.toJson(
                             localTemplateList.filterNot { it.templateName == template.templateName }
                         )
